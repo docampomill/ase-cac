@@ -37,16 +37,7 @@ class KIMModelInitializationError(CalculatorError):
 
 class KimpyError(CalculatorError):
     """
-    A call to a kimpy function resulted in a RuntimeError being raised
-    """
-
-    pass
-
-
-class KIMModelParameterError(CalculatorError):
-    """
-    An attempt to either access or mutate a KIM portable model
-    parameter was unsuccessful
+    A call to a kimpy function returned a non-zero error code
     """
 
     pass

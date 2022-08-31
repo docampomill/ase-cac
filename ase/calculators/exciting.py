@@ -5,7 +5,8 @@ import xml.etree.ElementTree as ET
 from ase.io.exciting import atoms2etree
 from ase.units import Bohr, Hartree
 from ase.calculators.calculator import PropertyNotImplementedError
-from xml.dom import minidom
+from ase.utils import basestring
+from xml.dom import  minidom
 
 
 class Exciting:
@@ -53,7 +54,7 @@ class Exciting:
     def update(self, atoms):
         if (not self.converged or
             len(self.numbers) != len(atoms) or
-                (self.numbers != atoms.get_atomic_numbers()).any()):
+            (self.numbers != atoms.get_atomic_numbers()).any()):
             self.initialize(atoms)
             self.calculate(atoms)
         elif ((self.positions != atoms.get_positions()).any() or
@@ -85,21 +86,10 @@ class Exciting:
         self.pbc = atoms.get_pbc().copy()
 
         self.initialize(atoms)
-        from pathlib import Path
-        xmlfile = Path(self.dir) / 'input.xml'
-        assert xmlfile.is_file()
-        print(xmlfile.read_text())
-        argv = [self.excitingbinary, 'input.xml']
-        from subprocess import check_call
-        check_call(argv, cwd=self.dir)
-
-        assert (Path(self.dir) / 'INFO.OUT').is_file()
-        assert (Path(self.dir) / 'info.xml').exists()
-
-        # syscall = ('cd %(dir)s; %(bin)s;' %
-        #           {'dir': self.dir, 'bin': self.excitingbinary})
-        # print(syscall)
-        # assert os.system(syscall) == 0
+        syscall = ('cd %(dir)s; %(bin)s;' %
+                   {'dir': self.dir, 'bin': self.excitingbinary})
+        print(syscall)
+        assert os.system(syscall) == 0
         self.read()
 
     def write(self, atoms):
@@ -133,9 +123,9 @@ class Exciting:
 
     def dicttoxml(self, pdict, element):
         for key, value in pdict.items():
-            if (isinstance(value, str) and key == 'text()'):
+            if (isinstance(value, basestring) and key == 'text()'):
                 element.text = value
-            elif (isinstance(value, str)):
+            elif (isinstance(value, basestring)):
                 element.attrib[key] = value
             elif (isinstance(value, list)):
                 for item in value:
@@ -160,14 +150,12 @@ class Exciting:
             raise RuntimeError("output doesn't exist")
         info = ET.parse(fd)
         self.energy = float(info.findall(
-            'groundstate/scl/iter/energies')[-1].attrib[
-                'totalEnergy']) * Hartree
+            'groundstate/scl/iter/energies')[-1].attrib['totalEnergy']) * Hartree
         forces = []
         forcesnodes = info.findall(
-            'groundstate/scl/structure')[-1].findall(
-                'species/atom/forces/totalforce')
+            'groundstate/scl/structure')[-1].findall('species/atom/forces/totalforce')
         for force in forcesnodes:
-            forces.append(np.array(list(force.attrib.values())).astype(float))
+            forces.append(np.array(list(force.attrib.values())).astype(np.float))
         self.forces = np.reshape(forces, (-1, 3)) * Hartree / Bohr
 
         if str(info.find('groundstate').attrib['status']) == 'finished':

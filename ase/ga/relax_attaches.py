@@ -3,8 +3,7 @@ to make the relaxations run more smoothly."""
 from math import sqrt
 import numpy as np
 
-
-class VariansBreak:
+class VariansBreak(object):
 
     """ Helper class which can be attached to a structure optimization,
         in order to terminale stalling calculations.
@@ -16,7 +15,6 @@ class VariansBreak:
         min_stdev: The limiting std. deviation in forces to terminate at
         N: The number of steps used to calculate the st. dev.
     """
-
     def __init__(self, atoms, dyn, min_stdev=0.005, N=15):
         self.atoms = atoms
         self.dyn = dyn
@@ -40,7 +38,8 @@ class VariansBreak:
             self.dyn.converged = lambda x: True
 
 
-class DivergenceBreak:
+
+class DivergenceBreak(object):
 
     """ Helper class which can be attached to a structure optimization,
         in order to terminate diverging calculations.
@@ -50,11 +49,10 @@ class DivergenceBreak:
         atoms: Atoms object being optimized
         dyn: The relaxation object being used
         N: The maximum number of recent steps to be included in the
-           evaluation of the slope
+           evaluation of the slope 
         Nmin: The minimal amount of steps required before evaluating
               the slope
     """
-
     def __init__(self, atoms, dyn, N=15, Nmin=5):
         self.atoms = atoms
         self.dyn = dyn

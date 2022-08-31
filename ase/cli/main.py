@@ -1,9 +1,10 @@
+
 import argparse
 import sys
 import textwrap
-from importlib import import_module
 
 from ase import __version__
+from ase.utils import import_module
 
 
 class CLIError(Exception):
@@ -20,23 +21,18 @@ commands = [
     # ('show', 'ase.cli.show'),
     ('test', 'ase.test'),
     ('gui', 'ase.gui.ag'),
-    ('db', 'ase.cli.db'),
+    ('db', 'ase.db.cli'),
     ('run', 'ase.cli.run'),
     ('band-structure', 'ase.cli.band_structure'),
     ('build', 'ase.cli.build'),
-    ('dimensionality', 'ase.cli.dimensionality'),
     ('eos', 'ase.eos'),
-    ('ulm', 'ase.cli.ulm'),
+    ('ulm', 'ase.io.ulm'),
     ('find', 'ase.cli.find'),
-    ('nebplot', 'ase.cli.nebplot'),
     ('nomad-upload', 'ase.cli.nomad'),
     ('nomad-get', 'ase.cli.nomadget'),
     ('convert', 'ase.cli.convert'),
     ('reciprocal', 'ase.cli.reciprocal'),
-    ('completion', 'ase.cli.completion'),
-    ('diff', 'ase.cli.diff'),
-    ('exec', 'ase.cli.exec')
-]
+    ('completion', 'ase.cli.completion')]
 
 
 def main(prog='ase', description='ASE command line tool.',
@@ -119,7 +115,6 @@ def main(prog='ase', description='ASE command line tool.',
 
 class Formatter(argparse.HelpFormatter):
     """Improved help formatter."""
-
     def _fill_text(self, text, width, indent):
         assert indent == ''
         out = ''

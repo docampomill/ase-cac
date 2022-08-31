@@ -166,11 +166,11 @@ class CombineMM(Calculator):
             if not self.mask[i]:
                 ct2 += 1
             if ((ct2 == self.apm2) &
-                    (self.apm2 != self.atoms2.calc.sites_per_mol)):
+                (self.apm2 != self.atoms2.calc.sites_per_mol)):
                 virtual_mask.append(False)
                 ct2 = 0
             if ((ct1 == self.apm1) &
-                    (self.apm1 != self.atoms1.calc.sites_per_mol)):
+                (self.apm1 != self.atoms1.calc.sites_per_mol)):
                 virtual_mask.append(True)
                 ct1 = 0
 
@@ -192,7 +192,7 @@ class CombineMM(Calculator):
         # Vectorized evaluation is not as trivial when spm1 != spm2.
         # This is pretty inefficient, but for ~1-5 counter ions as region 1
         # it should not matter much ..
-        # There is definitely room for improvements here.
+        # There is definetely room for improvements here.
         cell = self.cell.diagonal()
         for m1, (r1, c1) in enumerate(zip(R1, C1)):
             for m2, (r2, c2) in enumerate(zip(R2, C2)):

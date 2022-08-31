@@ -2,6 +2,7 @@
 Stream input commands to lammps to perform desired simulations
 """
 from ase.parallel import paropen
+from ase.utils import basestring as asestring
 from ase.calculators.lammps.unitconvert import convert
 
 # "End mark" used to indicate that the calculation is done
@@ -35,7 +36,7 @@ def lammps_create_atoms(fileobj, parameters, atoms, prismobj):
 
     # Get cell parameters and convert from ASE units to LAMMPS units
     xhi, yhi, zhi, xy, xz, yz = convert(prismobj.get_lammps_prism(),
-                                        "distance", "ASE", parameters.units)
+            "distance", "ASE", parameters.units)
 
     if parameters["always_triclinic"] or prismobj.is_skewed():
         fileobj.write(
@@ -76,7 +77,7 @@ def lammps_create_atoms(fileobj, parameters, atoms, prismobj):
                 "".format(*tuple(pos)).encode("utf-8")
             )
         fileobj.write(
-            "create_atoms {0} single {1} {2} {3} remap yes units box\n".format(
+            "create_atoms {0} single {1} {2} {3} units box\n".format(
                 *((species_i[sym],) + tuple(prismobj.vector_to_lammps(pos)))
             ).encode("utf-8")
         )
@@ -90,7 +91,7 @@ def write_lammps_in(lammps_in, parameters, atoms, prismobj,
         # write additional lines needed for some LAMMPS potentials
         if 'model_post' in parameters:
             mlines = parameters['model_post']
-            for ii in range(0, len(mlines)):
+            for ii in range(0,len(mlines)):
                 fileobj.write(mlines[ii].encode('utf-8'))
 
         if "masses" in parameters:
@@ -99,7 +100,7 @@ def write_lammps_in(lammps_in, parameters, atoms, prismobj,
                 # the type number and value of mass separated by a space
                 fileobj.write("mass {0} \n".format(mass).encode("utf-8"))
 
-    if isinstance(lammps_in, str):
+    if isinstance(lammps_in, asestring):
         fileobj = paropen(lammps_in, "wb")
         close_in_file = True
     else:
@@ -121,6 +122,16 @@ def write_lammps_in(lammps_in, parameters, atoms, prismobj,
         .encode("utf-8")
     )
 
+    # WeiGao: for 2d simulation
+    if "dimension" in parameters:
+        fileobj.write(
+            (
+                "\n".join(["dimension {0}".format(p) for p in parameters["dimension"]])
+                + "\n"
+                    ).encode("utf-8")
+        )
+    
+
     if "package" in parameters:
         fileobj.write(
             (
@@ -136,23 +147,20 @@ def write_lammps_in(lammps_in, parameters, atoms, prismobj,
                        "dihedral", "improper", "kspace"):
         style = style_type + "_style"
         if style in parameters:
-            fileobj.write(
-                '{} {} \n'.format(
-                    style,
-                    parameters[style]).encode("utf-8"))
+            fileobj.write('{} {} \n'.format(style, parameters[style]).encode("utf-8"))
 
     # write initialization lines needed for some LAMMPS potentials
     if 'model_init' in parameters:
         mlines = parameters['model_init']
-        for ii in range(0, len(mlines)):
+        for ii in range(0,len(mlines)):
             fileobj.write(mlines[ii].encode('utf-8'))
 
     # write units
     if 'units' in parameters:
-        units_line = 'units ' + parameters['units'] + '\n'
-        fileobj.write(units_line.encode('utf-8'))
+       units_line = 'units ' + parameters['units'] + '\n'
+       fileobj.write(units_line.encode('utf-8'))
     else:
-        fileobj.write('units metal\n'.encode('utf-8'))
+       fileobj.write('units metal\n'.encode('utf-8'))
 
     pbc = atoms.get_pbc()
     if "boundary" in parameters:
@@ -183,9 +191,7 @@ def write_lammps_in(lammps_in, parameters, atoms, prismobj,
     # Write interaction stuff
     fileobj.write("\n### interactions\n".encode("utf-8"))
     if "kim_interactions" in parameters:
-        fileobj.write(
-            "{}\n".format(
-                parameters["kim_interactions"]).encode("utf-8"))
+        fileobj.write("{}\n".format(parameters["kim_interactions"]).encode("utf-8"))
         write_model_post_and_masses(fileobj, parameters)
 
     elif ("pair_style" in parameters) and ("pair_coeff" in parameters):
@@ -195,6 +201,13 @@ def write_lammps_in(lammps_in, parameters, atoms, prismobj,
             fileobj.write(
                 "pair_coeff {0} \n" "".format(pair_coeff).encode("utf-8")
             )
+        # added by Wei Gao, to add hybrid pair style
+        if 'hybrid' in parameters['pair_style'] and ("pair_coeff_2" in parameters):
+            for pair_coeff in parameters["pair_coeff_2"]:
+                fileobj.write(
+                    "pair_coeff {0} \n" "".format(pair_coeff).encode("utf-8")
+                )
+    
         write_model_post_and_masses(fileobj, parameters)
 
     else:
@@ -229,13 +242,18 @@ def write_lammps_in(lammps_in, parameters, atoms, prismobj,
         "fx fy fz\n"
         "".format(lammps_trj, parameters["dump_period"]).encode("utf-8")
     )
+
+               
+    # WeiGao: without sort, the lammps parallalized run cause problem 
+    fileobj.write("dump_modify dump_all sort id\n".encode("utf-8"))
+
+    
     fileobj.write(
         "thermo_style custom {0}\n"
         "thermo_modify flush yes format float %23.16g\n"
-        "thermo 1\n".format(" ".join(parameters["thermo_args"])).encode(
-            "utf-8"
-        )
+        "thermo 1\n".format(" ".join(parameters["thermo_args"])).encode("utf-8")
     )
+ 
 
     if "timestep" in parameters:
         fileobj.write(

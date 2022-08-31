@@ -1,3 +1,4 @@
+import random
 import numpy as np
 from operator import itemgetter
 
@@ -10,8 +11,8 @@ class Mutation(OffspringCreator):
     """Base class for all particle mutation type operators.
     Do not call this class directly."""
 
-    def __init__(self, num_muts=1, rng=np.random):
-        OffspringCreator.__init__(self, num_muts=num_muts, rng=rng)
+    def __init__(self, num_muts=1):
+        OffspringCreator.__init__(self, num_muts=num_muts)
         self.descriptor = 'Mutation'
         self.min_inputs = 1
 
@@ -79,19 +80,19 @@ class Mutation(OffspringCreator):
 class RandomMutation(Mutation):
     """Moves a random atom the supplied length in a random direction."""
 
-    def __init__(self, length=2., num_muts=1, rng=np.random):
-        Mutation.__init__(self, num_muts=num_muts, rng=rng)
+    def __init__(self, length=2., num_muts=1):
+        Mutation.__init__(self, num_muts=num_muts)
         self.descriptor = 'RandomMutation'
         self.length = length
 
     def mutate(self, atoms):
         """ Does the actual mutation. """
-        tbm = self.rng.choice(range(len(atoms)))
+        tbm = random.choice(range(len(atoms)))
 
         indi = Atoms()
         for a in atoms:
             if a.index == tbm:
-                a.position += self.random_vector(self.length, rng=self.rng)
+                a.position += self.random_vector(self.length)
             indi.append(a)
         return indi
 
@@ -112,11 +113,11 @@ class RandomMutation(Mutation):
                 self.descriptor + ':Parent {0}'.format(f.info['confid']))
 
     @classmethod
-    def random_vector(cls, length, rng=np.random):
-        """return random vector of certain length"""
-        vec = np.array([rng.random() * 2 - 1 for i in range(3)])
+    def random_vector(cls, l):
+        """return random vector of length l"""
+        vec = np.array([random.random() * 2 - 1 for i in range(3)])
         vl = np.linalg.norm(vec)
-        return np.array([v * length / vl for v in vec])
+        return np.array([v * l / vl for v in vec])
 
 
 class RandomPermutation(Mutation):
@@ -124,14 +125,10 @@ class RandomPermutation(Mutation):
 
     Parameters:
 
-    num_muts: the number of times to perform this operation.
+    num_muts: the number of times to perform this operation."""
 
-    rng: Random number generator
-        By default numpy.random.
-    """
-
-    def __init__(self, elements=None, num_muts=1, rng=np.random):
-        Mutation.__init__(self, num_muts=num_muts, rng=rng)
+    def __init__(self, elements=None, num_muts=1):
+        Mutation.__init__(self, num_muts=num_muts)
         self.descriptor = 'RandomPermutation'
         self.elements = elements
 
@@ -145,7 +142,7 @@ class RandomPermutation(Mutation):
         indi.info['data']['parents'] = [f.info['confid']]
 
         for _ in range(self.num_muts):
-            RandomPermutation.mutate(f, self.elements, rng=self.rng)
+            RandomPermutation.mutate(f, self.elements)
 
         for atom in f:
             indi.append(atom)
@@ -154,17 +151,17 @@ class RandomPermutation(Mutation):
                 self.descriptor + ':Parent {0}'.format(f.info['confid']))
 
     @classmethod
-    def mutate(cls, atoms, elements=None, rng=np.random):
+    def mutate(cls, atoms, elements=None):
         """Do the actual permutation."""
         if elements is None:
             indices = range(len(atoms))
         else:
             indices = [a.index for a in atoms if a.symbol in elements]
-        i1 = rng.choice(indices)
-        i2 = rng.choice(indices)
+        i1 = random.choice(indices)
+        i2 = random.choice(indices)
         while atoms[i1].symbol == atoms[i2].symbol:
-            i2 = rng.choice(indices)
-        atoms.symbols[[i1, i2]] = atoms.symbols[[i2, i1]]
+            i2 = random.choice(indices)
+        atoms.positions[[i1, i2]] = atoms.positions[[i2, i1]]
 
 
 class COM2surfPermutation(Mutation):
@@ -186,14 +183,10 @@ class COM2surfPermutation(Mutation):
         complete particle. In that case remember to decrease this min_ratio.
 
     num_muts: the number of times to perform this operation.
-
-    rng: Random number generator
-        By default numpy.random.
     """
 
-    def __init__(self, elements=None, min_ratio=0.25, num_muts=1,
-                 rng=np.random):
-        Mutation.__init__(self, num_muts=num_muts, rng=rng)
+    def __init__(self, elements=None, min_ratio=0.25, num_muts=1):
+        Mutation.__init__(self, num_muts=num_muts)
         self.descriptor = 'COM2surfPermutation'
         self.min_ratio = min_ratio
         self.elements = elements
@@ -209,7 +202,7 @@ class COM2surfPermutation(Mutation):
 
         for _ in range(self.num_muts):
             elems = self.elements
-            COM2surfPermutation.mutate(f, elems, self.min_ratio, rng=self.rng)
+            COM2surfPermutation.mutate(f, elems, self.min_ratio)
 
         for atom in f:
             indi.append(atom)
@@ -218,7 +211,7 @@ class COM2surfPermutation(Mutation):
                 self.descriptor + ':Parent {0}'.format(f.info['confid']))
 
     @classmethod
-    def mutate(cls, atoms, elements, min_ratio, rng=np.random):
+    def mutate(cls, atoms, elements, min_ratio):
         """Performs the COM2surf permutation."""
         ac = atoms.copy()
         if elements is not None:
@@ -238,9 +231,8 @@ class COM2surfPermutation(Mutation):
         permuts = Mutation.get_list_of_possible_permutations(atoms,
                                                              core,
                                                              shell)
-        chosen = rng.randint(len(permuts))
-        swap = list(permuts[chosen])
-        atoms.symbols[swap] = atoms.symbols[swap[::-1]]
+        swap = list(random.choice(permuts))
+        atoms.positions[swap] = atoms.positions[swap[::-1]]
 
     @classmethod
     def get_core_indices(cls, atoms, atomic_conf, min_ratio, recurs=0):
@@ -340,13 +332,10 @@ class Poor2richPermutation(_NeighborhoodPermutation):
     Parameters:
 
     elements: Which elements to take into account in this permutation
-
-    rng: Random number generator
-        By default numpy.random.
     """
 
-    def __init__(self, elements=[], num_muts=1, rng=np.random):
-        _NeighborhoodPermutation.__init__(self, num_muts=num_muts, rng=rng)
+    def __init__(self, elements=[], num_muts=1):
+        _NeighborhoodPermutation.__init__(self, num_muts=num_muts)
         self.descriptor = 'Poor2richPermutation'
         self.elements = elements
 
@@ -360,7 +349,7 @@ class Poor2richPermutation(_NeighborhoodPermutation):
         indi.info['data']['parents'] = [f.info['confid']]
 
         for _ in range(self.num_muts):
-            Poor2richPermutation.mutate(f, self.elements, rng=self.rng)
+            Poor2richPermutation.mutate(f, self.elements)
 
         for atom in f:
             indi.append(atom)
@@ -369,15 +358,15 @@ class Poor2richPermutation(_NeighborhoodPermutation):
                 self.descriptor + ':Parent {0}'.format(f.info['confid']))
 
     @classmethod
-    def mutate(cls, atoms, elements, rng=np.random):
+    def mutate(cls, atoms, elements):
         _NP = _NeighborhoodPermutation
         # indices = [a.index for a in atoms if a.symbol in elements]
         ac = atoms.copy()
         del ac[[atom.index for atom in ac
                 if atom.symbol not in elements]]
         permuts = _NP.get_possible_poor2rich_permutations(ac)
-        swap = list(rng.choice(permuts))
-        atoms.symbols[swap] = atoms.symbols[swap[::-1]]
+        swap = list(random.choice(permuts))
+        atoms.positions[swap] = atoms.positions[swap[::-1]]
 
 
 class Rich2poorPermutation(_NeighborhoodPermutation):
@@ -392,13 +381,10 @@ class Rich2poorPermutation(_NeighborhoodPermutation):
     Parameters:
 
     elements: Which elements to take into account in this permutation
-
-    rng: Random number generator
-        By default numpy.random.
     """
 
-    def __init__(self, elements=None, num_muts=1, rng=np.random):
-        _NeighborhoodPermutation.__init__(self, num_muts=num_muts, rng=rng)
+    def __init__(self, elements=None, num_muts=1):
+        _NeighborhoodPermutation.__init__(self, num_muts=num_muts)
         self.descriptor = 'Rich2poorPermutation'
         self.elements = elements
 
@@ -416,7 +402,7 @@ class Rich2poorPermutation(_NeighborhoodPermutation):
         else:
             elems = self.elements
         for _ in range(self.num_muts):
-            Rich2poorPermutation.mutate(f, elems, rng=self.rng)
+            Rich2poorPermutation.mutate(f, elems)
 
         for atom in f:
             indi.append(atom)
@@ -425,15 +411,15 @@ class Rich2poorPermutation(_NeighborhoodPermutation):
                 self.descriptor + ':Parent {0}'.format(f.info['confid']))
 
     @classmethod
-    def mutate(cls, atoms, elements, rng=np.random):
+    def mutate(cls, atoms, elements):
         _NP = _NeighborhoodPermutation
         ac = atoms.copy()
         del ac[[atom.index for atom in ac
                 if atom.symbol not in elements]]
         permuts = _NP.get_possible_poor2rich_permutations(ac,
                                                           inverse=True)
-        swap = list(rng.choice(permuts))
-        atoms.symbols[swap] = atoms.symbols[swap[::-1]]
+        swap = list(random.choice(permuts))
+        atoms.positions[swap] = atoms.positions[swap[::-1]]
 
 
 class SymmetricSubstitute(Mutation):
@@ -443,8 +429,8 @@ class SymmetricSubstitute(Mutation):
 
     """
 
-    def __init__(self, elements=None, num_muts=1, rng=np.random):
-        Mutation.__init__(self, num_muts=num_muts, rng=rng)
+    def __init__(self, elements=None, num_muts=1):
+        Mutation.__init__(self, num_muts=num_muts)
         self.descriptor = 'SymmetricSubstitute'
         self.elements = elements
 
@@ -453,8 +439,8 @@ class SymmetricSubstitute(Mutation):
         atoms = atoms.copy()
         aconf = self.get_atomic_configuration(atoms,
                                               elements=self.elements)
-        itbm = self.rng.randint(0, len(aconf) - 1)
-        to_element = self.rng.choice(self.elements)
+        itbm = random.randint(0, len(aconf) - 1)
+        to_element = random.choice(self.elements)
 
         for i in aconf[itbm]:
             atoms[i].symbol = to_element
@@ -476,8 +462,8 @@ class RandomSubstitute(Mutation):
     """Substitutes one atom with another atom type. The possible atom types
     are supplied in the parameter elements"""
 
-    def __init__(self, elements=None, num_muts=1, rng=np.random):
-        Mutation.__init__(self, num_muts=num_muts, rng=rng)
+    def __init__(self, elements=None, num_muts=1):
+        Mutation.__init__(self, num_muts=num_muts)
         self.descriptor = 'RandomSubstitute'
         self.elements = elements
 
@@ -490,9 +476,9 @@ class RandomSubstitute(Mutation):
             elems = self.elements[:]
         possible_indices = [a.index for a in atoms
                             if a.symbol in elems]
-        itbm = self.rng.choice(possible_indices)
+        itbm = random.choice(possible_indices)
         elems.remove(atoms[itbm].symbol)
-        new_symbol = self.rng.choice(elems)
+        new_symbol = random.choice(elems)
         atoms[itbm].symbol = new_symbol
 
         return atoms

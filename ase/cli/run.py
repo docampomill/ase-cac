@@ -1,6 +1,14 @@
 import sys
-from typing import Dict, Any
+
 import numpy as np
+
+from ase.calculators.calculator import (get_calculator_class, names as calcnames,
+                                        PropertyNotImplementedError)
+from ase.constraints import FixAtoms, UnitCellFilter
+from ase.eos import EquationOfState
+from ase.io import read, write, Trajectory
+from ase.optimize import LBFGS
+import ase.db as db
 
 
 class CLICommand:
@@ -23,11 +31,10 @@ class CLICommand:
 
     @staticmethod
     def add_arguments(parser):
-        from ase.calculators.names import names
         parser.add_argument('calculator',
                             help='Name of calculator to use.  '
                             'Must be one of: {}.'
-                            .format(', '.join(names)))
+                            .format(', '.join(calcnames)))
         CLICommand.add_more_arguments(parser)
 
     @staticmethod
@@ -94,8 +101,6 @@ class Runner:
         self.calculate(atoms, args.name)
 
     def calculate(self, atoms, name):
-        from ase.io import write
-
         args = self.args
 
         if args.maximum_force or args.maximum_stress:
@@ -111,9 +116,6 @@ class Runner:
             write(args.output, atoms, append=True)
 
     def build(self, name):
-        import ase.db as db
-        from ase.io import read
-
         if name == '-':
             con = db.connect(sys.stdin, 'json')
             return con.get_atoms(add_additional_information=True)
@@ -125,8 +127,6 @@ class Runner:
             return atoms
 
     def set_calculator(self, atoms, name):
-        from ase.calculators.calculator import get_calculator_class
-
         cls = get_calculator_class(self.calculator_name)
         parameters = str2dict(self.args.parameters)
         if getattr(cls, 'nolabel', False):
@@ -135,8 +135,6 @@ class Runner:
             atoms.calc = cls(label=self.get_filename(name), **parameters)
 
     def calculate_once(self, atoms):
-        from ase.calculators.calculator import PropertyNotImplementedError
-
         args = self.args
 
         for p in args.properties or 'efsdMm':
@@ -152,10 +150,6 @@ class Runner:
                 pass
 
     def optimize(self, atoms, name):
-        from ase.constraints import FixAtoms, UnitCellFilter
-        from ase.io import Trajectory
-        from ase.optimize import LBFGS
-
         args = self.args
         if args.constrain_tags:
             tags = [int(t) for t in args.constrain_tags.split(',')]
@@ -175,9 +169,6 @@ class Runner:
         optimizer.run(fmax=fmax)
 
     def eos(self, atoms, name):
-        from ase.eos import EquationOfState
-        from ase.io import Trajectory
-
         args = self.args
 
         traj = Trajectory(self.get_filename(name, 'traj'), 'w', atoms)
@@ -189,7 +180,7 @@ class Runner:
         v1 = atoms.get_volume()
         volumes = strains**3 * v1
         energies = []
-        cell1 = atoms.cell.copy()
+        cell1 = atoms.cell
         for s in strains:
             atoms.set_cell(cell1 * s, scale_atoms=True)
             energies.append(atoms.get_potential_energy())
@@ -216,7 +207,7 @@ class Runner:
         return name
 
 
-def str2dict(s: str, namespace={}, sep: str = '=') -> Dict[str, Any]:
+def str2dict(s: str, namespace={}, sep: str = '='):
     """Convert comma-separated key=value string to dictionary.
 
     Examples:
@@ -235,11 +226,11 @@ def str2dict(s: str, namespace={}, sep: str = '=') -> Dict[str, Any]:
         return value
 
     dct = {}
-    strings = (s + ',').split(sep)
-    for i in range(len(strings) - 1):
-        key = strings[i]
-        m = strings[i + 1].rfind(',')
-        value: Any = strings[i + 1][:m]
+    s = (s + ',').split(sep)
+    for i in range(len(s) - 1):
+        key = s[i]
+        m = s[i + 1].rfind(',')
+        value = s[i + 1][:m]
         if value[0] == '{':
             assert value[-1] == '}'
             value = str2dict(value[1:-1], namespace, ':')
@@ -249,5 +240,5 @@ def str2dict(s: str, namespace={}, sep: str = '=') -> Dict[str, Any]:
         else:
             value = myeval(value)
         dct[key] = value
-        strings[i + 1] = strings[i + 1][m + 1:]
+        s[i + 1] = s[i + 1][m + 1:]
     return dct

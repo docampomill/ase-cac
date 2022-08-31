@@ -24,20 +24,17 @@ import time
 import subprocess
 import re
 import warnings
+from distutils.version import LooseVersion
 import numpy as np
 from ase.geometry import cell_to_cellpar
 from ase.calculators.calculator import (FileIOCalculator, Calculator, equal,
-                                        all_changes, kptdensity2monkhorstpack)
+                                        all_changes, kptdensity2monkhorstpack,
+                                        PropertyNotImplementedError)
 from ase.calculators.openmx.parameters import OpenMXParameters
 from ase.calculators.openmx.default_settings import default_dictionary
 from ase.calculators.openmx.reader import read_openmx, get_file_name
 from ase.calculators.openmx.writer import write_openmx
-
-
-def parse_omx_version(txt):
-    """Parse version number from stdout header."""
-    match = re.search(r'Welcome to OpenMX\s+Ver\.\s+(\S+)', txt, re.M)
-    return match.group(1)
+#from ase.calculators.openmx.dos import DOS
 
 
 class OpenMX(FileIOCalculator):
@@ -45,17 +42,17 @@ class OpenMX(FileIOCalculator):
     Calculator interface to the OpenMX code.
     """
 
-    implemented_properties = [
+    implemented_properties = (
         'free_energy',       # Same value with energy
         'energy',
-        'energies',
         'forces',
         'stress',
         'dipole',
         'chemical_potential',
         'magmom',
         'magmoms',
-        'eigenvalues']
+        'eigenvalues',
+    )
 
     default_parameters = OpenMXParameters()
 
@@ -76,8 +73,7 @@ class OpenMX(FileIOCalculator):
         'debug': False
     }
 
-    def __init__(self, restart=None,
-                 ignore_bad_restart_file=FileIOCalculator._deprecated,
+    def __init__(self, restart=None, ignore_bad_restart_file=False,
                  label='./openmx', atoms=None, command=None, mpi=None,
                  pbs=None, **kwargs):
 
@@ -154,7 +150,7 @@ class OpenMX(FileIOCalculator):
         def isRunning(process=None):
             ''' Check mpi is running'''
             return process.poll() is None
-        runfile = get_file_name('.dat', self.label, absolute_directory=False)
+        runfile = get_file_name('.dat', self.label)
         outfile = get_file_name('.log', self.label)
         olddir = os.getcwd()
         abs_dir = os.path.join(olddir, self.directory)
@@ -181,7 +177,7 @@ class OpenMX(FileIOCalculator):
             return process.poll() is None
         processes = self.processes
         threads = self.threads
-        runfile = get_file_name('.dat', self.label, absolute_directory=False)
+        runfile = get_file_name('.dat', self.label)
         outfile = get_file_name('.log', self.label)
         olddir = os.getcwd()
         abs_dir = os.path.join(olddir, self.directory)
@@ -305,9 +301,9 @@ class OpenMX(FileIOCalculator):
         See base FileIOCalculator for documentation.
         """
         if self.parameters.data_path is None:
-            if 'OPENMX_DFT_DATA_PATH' not in os.environ:
+            if not 'OPENMX_DFT_DATA_PATH' in os.environ:
                 warnings.warn('Please either set OPENMX_DFT_DATA_PATH as an'
-                              'enviroment variable or specify "data_path" as'
+                              'enviroment variable or specify dft_data_path as'
                               'a keyword argument')
 
         self.prind("Start Calculation")
@@ -331,8 +327,8 @@ class OpenMX(FileIOCalculator):
             # self.clean()
         except RuntimeError as e:
             try:
-                with open(get_file_name('.log'), 'r') as fd:
-                    lines = fd.readlines()
+                with open(get_file_name('.log'), 'r') as f:
+                    lines = f.readlines()
                 debug_lines = 10
                 print('##### %d last lines of the OpenMX output' % debug_lines)
                 for line in lines[-20:]:
@@ -367,12 +363,12 @@ class OpenMX(FileIOCalculator):
             debug = self.debug
         if nohup is None:
             nohup = self.nohup
-        self.prind('Reading input file' + self.label)
+        self.prind('Reading input file'+self.label)
         filename = get_file_name('.dat', self.label)
         if not nohup:
-            with open(filename, 'r') as fd:
+            with open(filename, 'r') as f:
                 while True:
-                    line = fd.readline()
+                    line = f.readline()
                     print(line.strip())
                     if not line:
                         break
@@ -477,10 +473,9 @@ class OpenMX(FileIOCalculator):
             if threads is None:
                 threads_string = ''
             command += 'mpirun -np ' + \
-                str(processes) + ' ' + self.command + \
-                ' %s ' + threads_string + ' |tee %s'
-            # str(processes) + ' openmx %s' + threads_string + ' > %s'
-
+                str(processes) + ' ' + self.command + ' %s ' + threads_string + ' |tee %s'
+                #str(processes) + ' openmx %s' + threads_string + ' > %s'
+                
         if runfile is None:
             runfile = abs_dir + '/' + self.prefix + '.dat'
         if outfile is None:
@@ -501,8 +496,24 @@ class OpenMX(FileIOCalculator):
         if atoms is None:
             atoms = self.atoms
 
-        # Note: Stress is only supported from OpenMX 3.8+.
-        stress = self.get_property('stress', atoms)
+        def check_version():
+            if LooseVersion(self.version) < '3.8':
+                raise PropertyNotImplementedError(
+                    'Version lower than 3.8 does not support stress '
+                    'calculation.  Your version is %s' % self.version)
+
+        # We may not yet know what version we are, since that can only
+        # be seen from the output
+        if getattr(self, 'version', None) is not None:
+            check_version()
+
+        try:
+            stress = self.get_property('stress', atoms)
+        except PropertyNotImplementedError:
+            # Now we know the version number, either we raise version
+            # error or the original error (the latter should not happen)
+            check_version()
+            raise
 
         return stress
 
@@ -511,7 +522,7 @@ class OpenMX(FileIOCalculator):
         This is band structure function. It is compatible to
         ase dft module """
         from ase.dft import band_structure
-        if isinstance(self['kpts'], tuple):
+        if type(self['kpts']) is tuple:
             self['kpts'] = self.get_kpoints(band_kpath=self['band_kpath'])
             return band_structure.get_band_structure(self.atoms, self, )
 
@@ -698,11 +709,11 @@ class OpenMX(FileIOCalculator):
         while not os.path.isfile(file):
             self.prind('Waiting for %s to come out' % file)
             time.sleep(5)
-        with open(file, 'r') as fd:
+        with open(file, 'r') as f:
             while running(**args):
-                fd.seek(last_position)
-                new_data = fd.read()
-                prev_position = fd.tell()
+                f.seek(last_position)
+                new_data = f.read()
+                prev_position = f.tell()
                 # self.prind('pos', prev_position != last_position)
                 if prev_position != last_position:
                     if not self.nohup:

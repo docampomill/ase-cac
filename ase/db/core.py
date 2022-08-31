@@ -6,7 +6,7 @@ import os
 import re
 import warnings
 from time import time
-from typing import List, Dict, Any
+from typing import List, Any
 
 import numpy as np
 
@@ -17,31 +17,27 @@ from ase.db.row import AtomsRow
 from ase.formula import Formula
 from ase.io.jsonio import create_ase_object
 from ase.parallel import world, DummyMPI, parallel_function, parallel_generator
-from ase.utils import Lock, PurePath
+from ase.utils import Lock, basestring, PurePath
 
 
 T2000 = 946681200.0  # January 1. 2000
 YEAR = 31557600.0  # 365.25 days
 
 
-# Format of key description: ('short', 'long', 'unit')
 default_key_descriptions = {
     'id': ('ID', 'Uniqe row ID', ''),
     'age': ('Age', 'Time since creation', ''),
     'formula': ('Formula', 'Chemical formula', ''),
-    'pbc': ('PBC', 'Periodic boundary conditions', ''),
     'user': ('Username', '', ''),
     'calculator': ('Calculator', 'ASE-calculator name', ''),
     'energy': ('Energy', 'Total energy', 'eV'),
-    'natoms': ('Number of atoms', '', ''),
     'fmax': ('Maximum force', '', 'eV/Ang'),
-    'smax': ('Maximum stress', 'Maximum stress on unit cell',
-             '`\\text{eV/Ang}^3`'),
-    'charge': ('Charge', 'Net charge in unit cell', '|e|'),
-    'mass': ('Mass', 'Sum of atomic masses in unit cell', 'au'),
+    'smax': ('Maximum stress', '', '`\\text{eV/Ang}^3`'),
+    'charge': ('Charge', '', '|e|'),
+    'mass': ('Mass', '', 'au'),
     'magmom': ('Magnetic moment', '', 'au'),
     'unique_id': ('Unique ID', 'Random (unique) ID', ''),
-    'volume': ('Volume', 'Volume of unit cell', '`\\text{Ang}^3`')}
+    'volume': ('Volume', 'Volume of unit-cell', '`\\text{Ang}^3`')}
 
 
 def now():
@@ -107,9 +103,9 @@ def check(key_value_pairs):
                 'chemical formula.  If you do a "db.select({0!r})",'
                 'you will not find rows with your key.  Instead, you wil get '
                 'rows containing the atoms in the formula!'.format(key))
-        if not isinstance(value, (numbers.Real, str, np.bool_)):
+        if not isinstance(value, (numbers.Real, basestring, np.bool_)):
             raise ValueError('Bad value for {!r}: {}'.format(key, value))
-        if isinstance(value, str):
+        if isinstance(value, basestring):
             for t in [int, float]:
                 if str_represents(value, t):
                     raise ValueError(
@@ -153,7 +149,7 @@ def connect(name, type='extract_from_name', create_indices=True,
     if type == 'extract_from_name':
         if name is None:
             type = None
-        elif not isinstance(name, str):
+        elif not isinstance(name, basestring):
             type = 'json'
         elif (name.startswith('postgresql://') or
               name.startswith('postgres://')):
@@ -172,7 +168,7 @@ def connect(name, type='extract_from_name', create_indices=True,
         if isinstance(name, str) and os.path.isfile(name):
             os.remove(name)
 
-    if type not in ['postgresql', 'mysql'] and isinstance(name, str):
+    if type not in ['postgresql', 'mysql'] and isinstance(name, basestring):
         name = os.path.abspath(name)
 
     if type == 'json':
@@ -243,7 +239,7 @@ def parse_selection(selection, **kwargs):
         for op in ['!=', '<=', '>=', '<', '>', '=']:
             if op in expression:
                 break
-        else:  # no break
+        else:
             if expression in atomic_numbers:
                 comparisons.append((expression, '>', 0))
             else:
@@ -279,7 +275,7 @@ def parse_selection(selection, **kwargs):
         elif key in atomic_numbers:
             key = atomic_numbers[key]
             value = int(value)
-        elif isinstance(value, str):
+        elif isinstance(value, basestring):
             value = convert_str_to_int_float_or_str(value)
         if key in numeric_keys and not isinstance(value, (int, float)):
             msg = 'Wrong type for "{}{}{}" - must be a number'
@@ -300,22 +296,16 @@ class Database:
             to interact with the database on the master only and then
             distribute results to all slaves.
         """
-        if isinstance(filename, str):
+        if isinstance(filename, basestring):
             filename = os.path.expanduser(filename)
         self.filename = filename
         self.create_indices = create_indices
-        if use_lock_file and isinstance(filename, str):
+        if use_lock_file and isinstance(filename, basestring):
             self.lock = Lock(filename + '.lock', world=DummyMPI())
         else:
             self.lock = None
         self.serial = serial
-
-        # Decription of columns and other stuff:
-        self._metadata: Dict[str, Any] = None
-
-    @property
-    def metadata(self) -> Dict[str, Any]:
-        raise NotImplementedError
+        self._metadata = None  # decription of columns and other stuff
 
     @parallel_function
     @lock
@@ -399,12 +389,15 @@ class Database:
     def __delitem__(self, id):
         self.delete([id])
 
-    def get_atoms(self, selection=None,
+    def get_atoms(self, selection=None, attach_calculator=False,
                   add_additional_information=False, **kwargs):
         """Get Atoms object.
 
         selection: int, str or list
             See the select() method.
+        attach_calculator: bool
+            Attach calculator object to Atoms object (default value is
+            False).
         add_additional_information: bool
             Put key-value pairs and data into Atoms.info dictionary.
 
@@ -413,7 +406,7 @@ class Database:
         """
 
         row = self.get(selection, **kwargs)
-        return row.toatoms(add_additional_information)
+        return row.toatoms(attach_calculator, add_additional_information)
 
     def __getitem__(self, selection):
         return self.get(selection)
@@ -631,8 +624,6 @@ def o2b(obj: Any, parts: List[bytes]):
     if isinstance(obj, (list, tuple)):
         return [o2b(value, parts) for value in obj]
     if isinstance(obj, np.ndarray):
-        assert obj.dtype != object, \
-            'Cannot convert ndarray of type "object" to bytes.'
         offset = sum(len(part) for part in parts)
         if not np.little_endian:
             obj = obj.byteswap()

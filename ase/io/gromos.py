@@ -4,21 +4,28 @@ gromacs package, http://www.gromacs.org
 its procedure src/gmxlib/confio.c (write_g96_conf)
 """
 
-import numpy as np
-
-from ase import Atoms
-from ase.data import chemical_symbols
-from ase.utils import reader, writer
+from ase.parallel import paropen
+from ase.utils import basestring
 
 
-@reader
-def read_gromos(fileobj):
+def read_gromos(fileobj, index=-1):
     """Read gromos geometry files (.g96).
     Reads:
     atom positions,
     and simulation cell (if present)
     tries to set atom types
     """
+
+    from ase import Atoms
+    from ase.data import chemical_symbols
+    import sys
+
+    if isinstance(fileobj, basestring):
+        fileobj = paropen(fileobj, 'r')
+
+    if (index != -1):
+        print('In gromos (g96) format only last frame can be read')
+        sys.exit()
 
     lines = fileobj.readlines()
     read_pos = False
@@ -33,7 +40,7 @@ def read_gromos(fileobj):
             read_box = False
         if read_pos:
             symbol, dummy, x, y, z = line.split()[2:7]
-            tmp_pos.append((10 * float(x), 10 * float(y), 10 * float(z)))
+            tmp_pos.append((10*float(x), 10*float(y), 10*float(z)))
             if (len(symbol) != 2):
                 symbols.append(symbol[0].lower().capitalize())
             else:
@@ -44,31 +51,32 @@ def read_gromos(fileobj):
                 else:
                     symbols.append(symbol[0].lower().capitalize())
             if symbols[-1] not in chemical_symbols:
-                raise RuntimeError("Symbol '{}' not in chemical symbols"
-                                   .format(symbols[-1]))
+                print('Symbol not in chemical symbols, please check',\
+                    symbols[-1])
+                sys.exit()
         if read_box:
             try:
-                grocell = list(map(float, line.split()))
-            except ValueError:
-                pass
-            else:
-                mycell = np.diag(grocell[:3])
-                if len(grocell) >= 9:
-                    mycell.flat[[1, 2, 3, 5, 6, 7]] = grocell[3:9]
-                mycell *= 10.
+                b00, b11, b22, b10, b20, b01, b21, b02, b12 = line.split()[:9]
+                mycell = [(10.*float(b00), 10.*float(b01), 10.*float(b02)),
+                          (10.*float(b10), 10.*float(b11), 10.*float(b12)),
+                          (10.*float(b20), 10.*float(b21), 10.*float(b22))]
+            except:
+                b00, b11, b22 = line.split()[:3]
+                mycell = [(10.*float(b00), 0.0, 0.0),
+                          (0.0, 10.*float(b11), 0.0),
+                          (0.0, 0.0, 10.*float(b22))]
         if ('POSITION' in line):
             read_pos = True
         if ('BOX' in line):
             read_box = True
-
-    gmx_system = Atoms(symbols=symbols, positions=tmp_pos, cell=mycell)
-    if mycell is not None:
-        gmx_system.pbc = True
+    if mycell == None:
+        gmx_system = Atoms(symbols=symbols, positions=tmp_pos)
+    else:
+        gmx_system = Atoms(symbols=symbols, positions=tmp_pos, cell=mycell)
+        gmx_system.set_pbc(True)
     return gmx_system
 
-
-@writer
-def write_gromos(fileobj, atoms):
+def write_gromos(fileobj, images):
     """Write gromos geometry files (.g96).
     Writes:
     atom positions,
@@ -77,26 +85,32 @@ def write_gromos(fileobj, atoms):
 
     from ase import units
 
-    natoms = len(atoms)
+    if isinstance(fileobj, basestring):
+        fileobj = paropen(fileobj, 'w')
+
+    if not isinstance(images, (list, tuple)):
+        images = [images]
+
+    natoms = len(images[-1])
     try:
-        gromos_residuenames = atoms.get_array('residuenames')
-    except KeyError:
+        gromos_residuenames = images[-1].get_array('residuenames')
+    except:
         gromos_residuenames = []
         for idum in range(natoms):
             gromos_residuenames.append('1DUM')
     try:
-        gromos_atomtypes = atoms.get_array('atomtypes')
-    except KeyError:
-        gromos_atomtypes = atoms.get_chemical_symbols()
+        gromos_atomtypes = images[-1].get_array('atomtypes')
+    except:
+        gromos_atomtypes = images[-1].get_chemical_symbols()
 
-    pos = atoms.get_positions()
+    pos = images[-1].get_positions()
     pos = pos / 10.0
-
-    vel = atoms.get_velocities()
-    if vel is None:
+    try:
+        vel = images[-1].get_velocities()
+        vel = vel * 1000.0 * units.fs / units.nm
+    except:
+        vel = pos
         vel = pos * 0.0
-    else:
-        vel *= 1000.0 * units.fs / units.nm
 
     fileobj.write('TITLE\n')
     fileobj.write('Gromos96 structure file written by ASE \n')
@@ -105,22 +119,32 @@ def write_gromos(fileobj, atoms):
     count = 1
     rescount = 0
     oldresname = ''
-    for resname, atomtype, xyz in zip(gromos_residuenames,
-                                      gromos_atomtypes,
-                                      pos):
+    for resname, atomtype, xyz in zip\
+            (gromos_residuenames, gromos_atomtypes, pos):
         if resname != oldresname:
             oldresname = resname
             rescount = rescount + 1
         okresname = resname.lstrip('0123456789 ')
-        fileobj.write('%5d %-5s %-5s%7d%15.9f%15.9f%15.9f\n' %
-                      (rescount, okresname, atomtype, count,
-                       xyz[0], xyz[1], xyz[2]))
+        fileobj.write('%5d %-5s %-5s%7d%15.9f%15.9f%15.9f\n' % \
+                          (rescount, okresname, atomtype, count, \
+                               xyz[0], xyz[1], xyz[2]))
         count = count + 1
     fileobj.write('END\n')
 
-    if atoms.get_pbc().any():
+    if images[-1].get_pbc().any():
         fileobj.write('BOX\n')
-        mycell = atoms.get_cell()
-        grocell = mycell.flat[[0, 4, 8, 1, 2, 3, 5, 6, 7]] * 0.1
-        fileobj.write(''.join(['{:15.9f}'.format(x) for x in grocell]))
-        fileobj.write('\nEND\n')
+        mycell = images[-1].get_cell()
+        fileobj.write('%15.9f%15.9f%15.9f' \
+                          % (mycell[0, 0] * 0.1, \
+                                 mycell[1, 1] * 0.1, \
+                                 mycell[2, 2] * 0.1))
+        fileobj.write('%15.9f%15.9f%15.9f' \
+                          % (mycell[1, 0] * 0.1, \
+                                 mycell[2, 0] * 0.1, \
+                                 mycell[0, 1] * 0.1))
+        fileobj.write('%15.9f%15.9f%15.9f\n' \
+                          % (mycell[2, 1] * 0.1, \
+                                 mycell[0, 2] * 0.1, \
+                                 mycell[1, 2] * 0.1))
+        fileobj.write('END\n')
+    return

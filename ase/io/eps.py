@@ -1,5 +1,5 @@
 import time
-from ase.utils import writer
+from distutils.version import LooseVersion
 from ase.io.utils import PlottingVariables, make_patch_list
 
 
@@ -20,51 +20,57 @@ class EPS(PlottingVariables):
             maxwidth=maxwidth,
             **kwargs)
 
-    def write(self, fd):
-        renderer = self._renderer(fd)
-        self.write_header(fd)
-        self.write_body(fd, renderer)
-        self.write_trailer(fd, renderer)
+    def write(self, filename):
+        self.filename = filename
+        self.write_header()
+        self.write_body()
+        self.write_trailer()
 
-    def write_header(self, fd):
-        from matplotlib.backends.backend_ps import psDefs
+    def write_header(self):
+        import matplotlib
+        if LooseVersion(matplotlib.__version__) <= '0.8':
+            raise RuntimeError('Your version of matplotlib (%s) is too old' %
+                               matplotlib.__version__)
 
-        fd.write('%!PS-Adobe-3.0 EPSF-3.0\n')
-        fd.write('%%Creator: G2\n')
-        fd.write('%%CreationDate: %s\n' % time.ctime(time.time()))
-        fd.write('%%Orientation: portrait\n')
+        from matplotlib.backends.backend_ps import RendererPS, psDefs
+
+        self.fd = open(self.filename, 'w')
+        self.fd.write('%!PS-Adobe-3.0 EPSF-3.0\n')
+        self.fd.write('%%Creator: G2\n')
+        self.fd.write('%%CreationDate: %s\n' % time.ctime(time.time()))
+        self.fd.write('%%Orientation: portrait\n')
         bbox = (0, 0, self.w, self.h)
-        fd.write('%%%%BoundingBox: %d %d %d %d\n' % bbox)
-        fd.write('%%EndComments\n')
+        self.fd.write('%%%%BoundingBox: %d %d %d %d\n' % bbox)
+        self.fd.write('%%EndComments\n')
 
         Ndict = len(psDefs)
-        fd.write('%%BeginProlog\n')
-        fd.write('/mpldict %d dict def\n' % Ndict)
-        fd.write('mpldict begin\n')
+        self.fd.write('%%BeginProlog\n')
+        self.fd.write('/mpldict %d dict def\n' % Ndict)
+        self.fd.write('mpldict begin\n')
         for d in psDefs:
             d = d.strip()
-            for line in d.split('\n'):
-                fd.write(line.strip() + '\n')
-        fd.write('%%EndProlog\n')
+            for l in d.split('\n'):
+                self.fd.write(l.strip() + '\n')
+        self.fd.write('%%EndProlog\n')
 
-        fd.write('mpldict begin\n')
-        fd.write('%d %d 0 0 clipbox\n' % (self.w, self.h))
+        self.fd.write('mpldict begin\n')
+        self.fd.write('%d %d 0 0 clipbox\n' % (self.w, self.h))
 
-    def _renderer(self, fd):
-        # Subclass can override
-        from matplotlib.backends.backend_ps import RendererPS
-        return RendererPS(self.w, self.h, fd)
+        self.renderer = RendererPS(self.w, self.h, self.fd)
 
-    def write_body(self, fd, renderer):
+    def write_body(self):
         patch_list = make_patch_list(self)
         for patch in patch_list:
-            patch.draw(renderer)
+            patch.draw(self.renderer)
 
-    def write_trailer(self, fd, renderer):
-        fd.write('end\n')
-        fd.write('showpage\n')
+    def write_trailer(self):
+        self.fd.write('end\n')
+        self.fd.write('showpage\n')
+        self.fd.close()
 
 
-@writer
-def write_eps(fd, atoms, **parameters):
-    EPS(atoms, **parameters).write(fd)
+def write_eps(filename, atoms, **parameters):
+    if isinstance(atoms, list):
+        assert len(atoms) == 1
+        atoms = atoms[0]
+    EPS(atoms, **parameters).write(filename)

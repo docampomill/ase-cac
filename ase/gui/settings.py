@@ -6,14 +6,15 @@ import ase.gui.ui as ui
 class Settings:
     def __init__(self, gui):
         self.gui = gui
-        win = ui.Window(_('Settings'), wmtype='utility')
+        win = ui.Window(_('Settings'))
 
         # Constraints
         win.add(_('Constraints:'))
-        win.add([ui.Button(_('Fix'), self.constrain_selected),
+        win.add([ui.Button(_('Constrain'), self.constrain_selected),
                  '/',
                  ui.Button(_('release'), self.release_selected),
                  _(' selected atoms')])
+        win.add(ui.Button(_('Constrain immobile atoms'), self.immobile))
         win.add(ui.Button(_('Clear all constraints'), self.clear_constraints))
 
         # Visibility
@@ -77,6 +78,11 @@ class Settings:
 
     def release_selected(self):
         self.gui.images.set_dynamic(self.gui.images.selected, True)
+        self.gui.draw()
+
+    def immobile(self):
+        # wtf? XXX detect non-moving atoms somehow
+        #self.gui.images.set_dynamic()
         self.gui.draw()
 
     def clear_constraints(self):

@@ -1,3 +1,4 @@
+
 import numpy as np
 
 import ase.gui.ui as ui
@@ -6,8 +7,7 @@ from ase.gui.i18n import _
 
 class Movie:
     def __init__(self, gui):
-        self.win = win = ui.Window(
-            _('Movie'), close=self.close, wmtype='utility')
+        self.win = win = ui.Window(_('Movie'), self.close)
         win.add(_('Image number:'))
         self.frame_number = ui.Scale(gui.frame + 1, 1,
                                      len(gui.images),

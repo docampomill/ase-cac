@@ -13,14 +13,13 @@ A = 600e3 * units.kcal / units.mol
 B = 610 * units.kcal / units.mol
 sigma0 = (A / B)**(1 / 6.)
 epsilon0 = B**2 / (4 * A)
-# https://doi.org/10.1063/1.445869
-
+# http://dx.doi.org/10.1063/1.445869
 
 class TIP4P(TIP3P):
     def __init__(self, rc=7.0, width=1.0):
         """ TIP4P potential for water.
 
-        :doi:`10.1063/1.445869`
+        http://dx.doi.org/10.1063/1.445869
 
         Requires an atoms object of OHH,OHH, ... sequence
         Correct TIP4P charges and LJ parameters set automatically.
@@ -174,7 +173,7 @@ class TIP4P(TIP3P):
         charges[0::4] = 0.00  # O
         charges[1::4] = qH  # H1
         charges[2::4] = qH  # H2
-        charges[3::4] = - 2 * qH  # X1
+        charges[3::4] = - 2* qH  # X1
         return charges
 
     def redistribute_forces(self, forces):

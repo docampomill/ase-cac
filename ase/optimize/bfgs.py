@@ -1,17 +1,16 @@
+# -*- coding: utf-8 -*-
 import warnings
 
 import numpy as np
 from numpy.linalg import eigh
 
 from ase.optimize.optimize import Optimizer
+from ase.utils import basestring
 
 
 class BFGS(Optimizer):
-    # default parameters
-    defaults = {**Optimizer.defaults, 'alpha': 70.0}
-
     def __init__(self, atoms, restart=None, logfile='-', trajectory=None,
-                 maxstep=None, master=None, alpha=None):
+                 maxstep=0.04, master=None):
         """BFGS optimizer.
 
         Parameters:
@@ -33,38 +32,26 @@ class BFGS(Optimizer):
 
         maxstep: float
             Used to set the maximum distance an atom can move per
-            iteration (default value is 0.2 Å).
+            iteration (default value is 0.04 Å).
 
         master: boolean
             Defaults to None, which causes only rank 0 to save files.  If
             set to true,  this rank will save files.
-
-        alpha: float
-            Initial guess for the Hessian (curvature of energy surface). A
-            conservative value of 70.0 is the default, but number of needed
-            steps to converge might be less if a lower value is used. However,
-            a lower value also means risk of instability.
         """
-        if maxstep is None:
-            self.maxstep = self.defaults['maxstep']
-        else:
-            self.maxstep = maxstep
-
-        if self.maxstep > 1.0:
-            warnings.warn('You are using a *very* large value for '
+        if maxstep > 1.0:
+            warnings.warn('You are using a much too large value for '
                           'the maximum step size: %.1f Å' % maxstep)
-
-        if alpha is None:
-            self.alpha = self.defaults['alpha']
-        else:
-            self.alpha = alpha
+        self.maxstep = maxstep
 
         Optimizer.__init__(self, atoms, restart, logfile, trajectory, master)
 
-    def initialize(self):
-        # initial hessian
-        self.H0 = np.eye(3 * len(self.atoms)) * self.alpha
+    def todict(self):
+        d = Optimizer.todict(self)
+        if hasattr(self, 'maxstep'):
+            d.update(maxstep=self.maxstep)
+        return d
 
+    def initialize(self):
         self.H = None
         self.r0 = None
         self.f0 = None
@@ -82,19 +69,6 @@ class BFGS(Optimizer):
         f = f.reshape(-1)
         self.update(r.flat, f, self.r0, self.f0)
         omega, V = eigh(self.H)
-
-        # FUTURE: Log this properly
-        # # check for negative eigenvalues of the hessian
-        # if any(omega < 0):
-        #     n_negative = len(omega[omega < 0])
-        #     msg = '\n** BFGS Hessian has {} negative eigenvalues.'.format(
-        #         n_negative
-        #     )
-        #     print(msg, flush=True)
-        #     if self.logfile is not None:
-        #         self.logfile.write(msg)
-        #         self.logfile.flush()
-
         dr = np.dot(V, np.dot(f, V) / np.fabs(omega)).reshape((-1, 3))
         steplengths = (dr**2).sum(1)**0.5
         dr = self.determine_step(dr, steplengths)
@@ -111,20 +85,13 @@ class BFGS(Optimizer):
         """
         maxsteplength = np.max(steplengths)
         if maxsteplength >= self.maxstep:
-            scale = self.maxstep / maxsteplength
-            # FUTURE: Log this properly
-            # msg = '\n** scale step by {:.3f} to be shorter than {}'.format(
-            #     scale, self.maxstep
-            # )
-            # print(msg, flush=True)
-
-            dr *= scale
+            dr *= self.maxstep / maxsteplength
 
         return dr
 
     def update(self, r, f, r0, f0):
         if self.H is None:
-            self.H = self.H0
+            self.H = np.eye(3 * len(self.atoms)) * 70.0
             return
         dr = r - r0
 
@@ -140,7 +107,7 @@ class BFGS(Optimizer):
 
     def replay_trajectory(self, traj):
         """Initialize hessian from old trajectory."""
-        if isinstance(traj, str):
+        if isinstance(traj, basestring):
             from ase.io.trajectory import Trajectory
             traj = Trajectory(traj, 'r')
         self.H = None

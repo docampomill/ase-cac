@@ -1,3 +1,4 @@
+
 # lammps.py (2011/03/29)
 # An ASE calculator for the LAMMPS classical MD code available from
 #       http://lammps.sandia.gov/
@@ -25,18 +26,19 @@
 import os
 import shutil
 import shlex
-from subprocess import Popen, PIPE, TimeoutExpired
+from subprocess import Popen, PIPE
 from threading import Thread
 from re import compile as re_compile, IGNORECASE
 from tempfile import mkdtemp, NamedTemporaryFile, mktemp as uns_mktemp
 import inspect
 import warnings
-from typing import Dict, Any
 import numpy as np
 
+from ase import Atoms
 from ase.parallel import paropen
 from ase.calculators.calculator import Calculator
 from ase.calculators.calculator import all_changes
+from ase.utils import basestring as asestring
 from ase.data import chemical_symbols
 from ase.data import atomic_masses
 from ase.io.lammpsdata import write_lammps_data
@@ -53,15 +55,13 @@ class LAMMPS(Calculator):
     """The LAMMPS calculators object
 
     files: list
-        List of files typically containing relevant potentials for the
-        calculation
+        List of files typically containing relevant potentials for the calculation
     parameters: dict
         Dictionary of settings to be passed into the input file for calculation.
     specorder: list
         Within LAAMPS, atoms are identified by an integer value starting from 1.
-        This variable allows the user to define the order of the indices
-        assigned to the atoms in the calculation, with the default
-        if not given being alphabetical
+        This variable allows the user to define the order of the indices assigned to the
+        atoms in the calculation, with the default if not given being alphabetical
     keep_tmp_files: bool
         Retain any temporary files created. Mostly useful for debugging.
     tmp_dir: str
@@ -103,22 +103,19 @@ potentials)
 
     lammps = LAMMPS(parameters=parameters, files=files)
 
-    NiH.calc = lammps
+    NiH.set_calculator(lammps)
     print("Energy ", NiH.get_potential_energy())
 
-(Remember you also need to set the environment variable
-``$ASE_LAMMPSRUN_COMMAND``)
+(Remember you also need to set the environment variable ``$ASE_LAMMPSRUN_COMMAND``)
 
     """
 
     name = "lammpsrun"
-    implemented_properties = ["energy", "free_energy", "forces", "stress",
-                              "energies"]
+    implemented_properties = ["energy", "forces", "stress", "energies"]
 
     # parameters to choose options in LAMMPSRUN
-    ase_parameters: Dict[str, Any] = dict(
+    ase_parameters = dict(
         specorder=None,
-        atorder=True,
         always_triclinic=False,
         keep_alive=True,
         keep_tmp_files=False,
@@ -332,15 +329,9 @@ potentials)
         # Close lammps input and wait for lammps to end. Return process
         # return value
         if self._lmp_alive():
+            self._lmp_handle.stdin.close()
             # !TODO: handle lammps error codes
-            try:
-                self._lmp_handle.communicate(timeout=5)
-            except TimeoutExpired:
-                self._lmp_handle.kill()
-                self._lmp_handle.communicate()
-            err = self._lmp_handle.poll()
-            assert err is not None
-            return err
+            # return self._lmp_handle.wait()
 
     def set_missing_parameters(self):
         """Verify that all necessary variables are set.
@@ -388,20 +379,21 @@ potentials)
         self.calls += 1
 
         # change into subdirectory for LAMMPS calculations
-        tempdir = self.parameters.tmp_dir
+        cwd = os.getcwd()
+        os.chdir(self.parameters.tmp_dir)
 
         # setup file names for LAMMPS calculation
         label = "{0}{1:>06}".format(self.label, self.calls)
         lammps_in = uns_mktemp(
-            prefix="in_" + label, dir=tempdir
+            prefix="in_" + label, dir=self.parameters.tmp_dir
         )
         lammps_log = uns_mktemp(
-            prefix="log_" + label, dir=tempdir
+            prefix="log_" + label, dir=self.parameters.tmp_dir
         )
         lammps_trj_fd = NamedTemporaryFile(
             prefix="trj_" + label,
             suffix=(".bin" if self.parameters.binary_dump else ""),
-            dir=tempdir,
+            dir=self.parameters.tmp_dir,
             delete=(not self.parameters.keep_tmp_files),
         )
         lammps_trj = lammps_trj_fd.name
@@ -410,7 +402,7 @@ potentials)
         else:
             lammps_data_fd = NamedTemporaryFile(
                 prefix="data_" + label,
-                dir=tempdir,
+                dir=self.parameters.tmp_dir,
                 delete=(not self.parameters.keep_tmp_files),
                 mode='w',
                 encoding='ascii'
@@ -479,9 +471,10 @@ potentials)
 
         exitcode = lmp_handle.poll()
         if exitcode and exitcode != 0:
+            cwd = os.getcwd()
             raise RuntimeError(
                 "LAMMPS exited in {} with exit code: {}."
-                "".format(tempdir, exitcode)
+                "".format(cwd, exitcode)
             )
 
         # A few sanity checks
@@ -494,7 +487,7 @@ potentials)
 
         trj_atoms = read_lammps_dump(
             infileobj=lammps_trj,
-            order=self.parameters.atorder,
+            order=False,
             index=-1,
             prismobj=self.prism,
             specorder=self.parameters.specorder,
@@ -505,7 +498,7 @@ potentials)
 
         self.forces = trj_atoms.get_forces()
         # !TODO: trj_atoms is only the last snapshot of the system; Is it
-        #        desirable to save also the inbetween steps?
+        #        desireable to save also the inbetween steps?
         if self.parameters.trajectory_out is not None:
             # !TODO: is it advisable to create here temporary atoms-objects
             self.trajectory_out.write(trj_atoms)
@@ -515,10 +508,7 @@ potentials)
             tc["pe"], "energy", self.parameters["units"], "ASE"
         )
         self.results["free_energy"] = self.results["energy"]
-        self.results['forces'] = convert(self.forces.copy(),
-                                         'force',
-                                         self.parameters['units'],
-                                         'ASE')
+        self.results["forces"] = self.forces.copy()
         stress = np.array(
             [-tc[i] for i in ("pxx", "pyy", "pzz", "pyz", "pxz", "pxy")]
         )
@@ -543,11 +533,7 @@ potentials)
         if not self.parameters.no_data_file:
             lammps_data_fd.close()
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        self._lmp_end()
+        os.chdir(cwd)
 
     def read_lammps_log(self, lammps_log=None):
         # !TODO: somehow communicate 'thermo_content' explicitly
@@ -556,7 +542,7 @@ potentials)
         if lammps_log is None:
             lammps_log = self.label + ".log"
 
-        if isinstance(lammps_log, str):
+        if isinstance(lammps_log, asestring):
             fileobj = paropen(lammps_log, "wb")
             close_log_file = True
         else:
@@ -565,12 +551,11 @@ potentials)
             close_log_file = False
 
         # read_log depends on that the first (three) thermo_style custom args
-        # can be capitalized and matched against the log output. I.e.
+        # can be capitilized and matched against the log output. I.e.
         # don't use e.g. 'ke' or 'cpu' which are labeled KinEng and CPU.
-        mark_re = r"^\s*" + r"\s+".join(
+        _custom_thermo_mark = " ".join(
             [x.capitalize() for x in self.parameters.thermo_args[0:3]]
         )
-        _custom_thermo_mark = re_compile(mark_re)
 
         # !TODO: regex-magic necessary?
         # Match something which can be converted to a float
@@ -588,10 +573,10 @@ potentials)
             if 'ERROR:' in line:
                 if close_log_file:
                     fileobj.close()
-                raise RuntimeError(f'LAMMPS exits with error message: {line}')
+                raise RuntimeError('LAMMPS exits with error message: {}'.format(line))
 
             # get thermo output
-            if _custom_thermo_mark.match(line):
+            if line.startswith(_custom_thermo_mark):
                 bool_match = True
                 while bool_match:
                     line = fileobj.readline().decode("utf-8")
@@ -653,3 +638,33 @@ class SpecialTee:
     def flush(self):
         self._orig_fd.flush()
         self._out_fd.flush()
+
+
+if __name__ == "__main__":
+    pair_style = "eam"
+    Pd_eam_file = "Pd_u3.eam"
+    pair_coeff = ["* * " + Pd_eam_file]
+    parameters = {"pair_style": pair_style, "pair_coeff": pair_coeff}
+    my_files = [Pd_eam_file]
+    calc = LAMMPS(parameters=parameters, files=my_files)
+    a0 = 3.93
+    b0 = a0 / 2.0
+
+    bulk = Atoms(
+        ["Pd"] * 4,
+        positions=[(0, 0, 0), (b0, b0, 0), (b0, 0, b0), (0, b0, b0)],
+        cell=[a0] * 3,
+        pbc=True,
+    )
+    # test get_forces
+    print("forces for a = {0}".format(a0))
+    print(calc.get_forces(bulk))
+    # single points for various lattice constants
+    bulk.set_calculator(calc)
+    for i in range(-5, 5, 1):
+        a = a0 * (1 + i / 100.0)
+        bulk.set_cell([a] * 3)
+        print("a : {0} , total energy : {1}".format(
+            a, bulk.get_potential_energy()))
+
+    calc.clean()

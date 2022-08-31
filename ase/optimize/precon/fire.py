@@ -4,7 +4,6 @@ from ase.optimize.optimize import Optimizer
 from ase.constraints import UnitCellFilter
 import time
 
-
 class PreconFIRE(Optimizer):
 
     def __init__(self, atoms, restart=None, logfile='-', trajectory=None,
@@ -96,7 +95,7 @@ class PreconFIRE(Optimizer):
                 func_val = self.func(r_test)
                 self.e1 = func_val
                 if (func_val > self.func(r) -
-                        self.theta * self.dt * np.vdot(v_test, f)):
+                      self.theta * self.dt * np.vdot(v_test, f)):
                     self.v[:] *= 0.0
                     self.a = self.astart
                     self.dt *= self.fdec

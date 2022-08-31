@@ -6,15 +6,17 @@ from ase.neighborlist import NeighborList
 from ase.utils import pbc2pbc
 
 
-class OFPComparator:
+class OFPComparator(object):
     """Implementation of comparison using Oganov's fingerprint (OFP)
     functions, based on:
 
-      * :doi:`Oganov, Valle, J. Chem. Phys. 130, 104504 (2009)
-        <10.1063/1.3079326>`
+      * `Oganov, Valle, J. Chem. Phys. 130, 104504 (2009)`__
 
-      * :doi:`Lyakhov, Oganov, Valle, Comp. Phys. Comm. 181 (2010) 1623-1632
-        <10.1016/j.cpc.2010.06.007>`
+        __ http://dx.doi.org/10.1063/1.3079326
+
+      * `Lyakhov, Oganov, Valle, Comp. Phys. Comm. 181 (2010) 1623-1632`__
+
+        __ http://dx.doi.org/10.1016/j.cpc.2010.06.007
 
     Parameters:
 
@@ -46,7 +48,7 @@ class OFPComparator:
          Note: for isolated systems (pbc = [False, False, False]),
          the pair correlation function itself is always short-ranged
          (decays to zero beyond a certain radius), so unity is not
-         subtracted for calculating the fingerprint. Also the
+         substracted for calculating the fingerprint. Also the
          volume normalization disappears.
 
     maxdims: list of three floats or None
@@ -112,7 +114,7 @@ class OFPComparator:
             raise Exception('The two configurations are not the same size.')
 
         # first we check the energy criteria
-        if a1.calc is not None and a2.calc is not None:
+        if a1.get_calculator() is not None and a2.get_calculator() is not None:
             dE = abs(a1.get_potential_energy() - a2.get_potential_energy())
             if dE >= self.dE:
                 return False
@@ -418,7 +420,7 @@ class OFPComparator:
         """ Returns a list with the local order for every atom,
         using the definition of local order from
         Lyakhov, Oganov, Valle, Comp. Phys. Comm. 181 (2010) 1623-1632
-        :doi:`10.1016/j.cpc.2010.06.007`"""
+        http://dx.doi.org/10.1016/j.cpc.2010.06.007"""
 
         # total number of atoms:
         n_tot = sum([len(typedic[key]) for key in typedic])

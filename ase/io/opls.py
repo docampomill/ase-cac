@@ -7,6 +7,7 @@ from ase.calculators.lammpsrun import Prism
 from ase.neighborlist import NeighborList
 from ase.data import atomic_masses, chemical_symbols
 from ase.io import read
+from ase.utils import basestring
 
 
 def twochar(name):
@@ -45,7 +46,7 @@ class AnglesData:
     def name_value(self, aname, bname, cname):
         for name in [
             (twochar(aname) + '-' + twochar(bname) + '-' + twochar(cname)),
-                (twochar(cname) + '-' + twochar(bname) + '-' + twochar(aname))]:
+            (twochar(cname) + '-' + twochar(bname) + '-' + twochar(aname))]:
             if name in self.nvh:
                 return name, self.nvh[name]
         return None, None
@@ -74,6 +75,8 @@ class OPLSff:
             self.read(fileobj)
 
     def read(self, fileobj, comments='#'):
+        if isinstance(fileobj, basestring):
+            fileobj = open(fileobj)
 
         def read_block(name, symlen, nvalues):
             """Read a data block.
@@ -141,10 +144,9 @@ class OPLSff:
         self.write_lammps_atoms(atoms, connectivities)
 
     def write_lammps_in(self):
-        with open(self.prefix + '_in', 'w') as fileobj:
-            self._write_lammps_in(fileobj)
-
-    def _write_lammps_in(self, fileobj):
+        fileobj = self.prefix + '_in'
+        if isinstance(fileobj, basestring):
+            fileobj = open(fileobj, 'w')
         fileobj.write("""# LAMMPS relaxation (written by ASE)
 
 units           metal
@@ -172,14 +174,15 @@ restart         100000 test_relax
 
 min_style       fire
 minimize        1.0e-14 1.0e-5 100000 100000
-""")  # noqa: E501
+""")
+        fileobj.close()
 
     def write_lammps_atoms(self, atoms, connectivities):
         """Write atoms input for LAMMPS"""
-        with open(self.prefix + '_atoms', 'w') as fileobj:
-            self._write_lammps_atoms(fileobj, atoms, connectivities)
 
-    def _write_lammps_atoms(self, fileobj, atoms, connectivities):
+        fname = self.prefix + '_atoms'
+        fileobj = open(fname, 'w')
+
         # header
         fileobj.write(fileobj.name + ' (by ' + str(self.__class__) + ')\n\n')
         fileobj.write(str(len(atoms)) + ' atoms\n')
@@ -202,13 +205,10 @@ minimize        1.0e-14 1.0e-5 100000 100000
 
         # cell
         p = Prism(atoms.get_cell())
-        xhi, yhi, zhi, xy, xz, yz = p.get_lammps_prism()
+        xhi, yhi, zhi, xy, xz, yz = p.get_lammps_prism_str()
         fileobj.write('\n0.0 %s  xlo xhi\n' % xhi)
         fileobj.write('0.0 %s  ylo yhi\n' % yhi)
         fileobj.write('0.0 %s  zlo zhi\n' % zhi)
-
-        if p.is_skewed():
-            fileobj.write(f"{xy} {xz} {yz}  xy xz yz\n")
 
         # atoms
         fileobj.write('\nAtoms\n\n')
@@ -218,7 +218,7 @@ minimize        1.0e-14 1.0e-5 100000 100000
         else:
             molid = [1] * len(atoms)
         for i, r in enumerate(
-                p.vector_to_lammps(atoms.get_positions())):
+            p.positions_to_lammps_strs(atoms.get_positions())):
             atype = atoms.types[tag[i]]
             if len(atype) < 2:
                 atype = atype + ' '
@@ -231,7 +231,6 @@ minimize        1.0e-14 1.0e-5 100000 100000
         # velocities
         velocities = atoms.get_velocities()
         if velocities is not None:
-            velocities = p.vector_to_lammps(atoms.get_velocities())
             fileobj.write('\nVelocities\n\n')
             for i, v in enumerate(velocities):
                 fileobj.write('%6d %g %g %g\n' %
@@ -247,37 +246,43 @@ minimize        1.0e-14 1.0e-5 100000 100000
                            typ, cs))
 
         # bonds
-        if blist:
+        if len(blist):
             fileobj.write('\nBonds\n\n')
             for ib, bvals in enumerate(blist):
                 fileobj.write('%8d %6d %6d %6d ' %
                               (ib + 1, bvals[0] + 1, bvals[1] + 1,
                                bvals[2] + 1))
-                if bvals[0] in btypes:
+                try:
                     fileobj.write('# ' + btypes[bvals[0]])
+                except:
+                    pass
                 fileobj.write('\n')
 
         # angles
-        if alist:
+        if len(alist):
             fileobj.write('\nAngles\n\n')
             for ia, avals in enumerate(alist):
                 fileobj.write('%8d %6d %6d %6d %6d ' %
                               (ia + 1, avals[0] + 1,
                                avals[1] + 1, avals[2] + 1, avals[3] + 1))
-                if avals[0] in atypes:
+                try:
                     fileobj.write('# ' + atypes[avals[0]])
+                except:
+                    pass
                 fileobj.write('\n')
 
         # dihedrals
-        if dlist:
+        if len(dlist):
             fileobj.write('\nDihedrals\n\n')
             for i, dvals in enumerate(dlist):
                 fileobj.write('%8d %6d %6d %6d %6d %6d ' %
                               (i + 1, dvals[0] + 1,
                                dvals[1] + 1, dvals[2] + 1,
                                dvals[3] + 1, dvals[4] + 1))
-                if dvals[0] in dtypes:
+                try:
                     fileobj.write('# ' + dtypes[dvals[0]])
+                except:
+                    pass
                 fileobj.write('\n')
 
     def update_neighbor_list(self, atoms):
@@ -393,30 +398,30 @@ minimize        1.0e-14 1.0e-5 100000 100000
         dih_list = []
         dih_types = []
 
-        def append(name, i, j, k, L):
+        def append(name, i, j, k, l):
             if name not in dih_types:
                 dih_types.append(name)
             index = dih_types.index(name)
-            if (([index, i, j, k, L] not in dih_list) and
-                    ([index, L, k, j, i] not in dih_list)):
-                dih_list.append([index, i, j, k, L])
+            if (([index, i, j, k, l] not in dih_list) and
+                ([index, l, k, j, i] not in dih_list)):
+                dih_list.append([index, i, j, k, l])
 
         for angle in ang_types:
-            L, i, j, k = angle
+            l, i, j, k = angle
             iname = types[tags[i]]
             jname = types[tags[j]]
             kname = types[tags[k]]
 
             # search for l-i-j-k
             indicesi, offsetsi = self.nl.get_neighbors(i)
-            for L, offsetl in zip(indicesi, offsetsi):
-                if L == j:
+            for l, offsetl in zip(indicesi, offsetsi):
+                if l == j:
                     continue  # avoid double count
-                lname = types[tags[L]]
+                lname = types[tags[l]]
                 cut = cutoffs.value(iname, lname)
                 if cut is None:
                     continue  # don't have it
-                dist = np.linalg.norm(atoms[i].position - atoms[L].position -
+                dist = np.linalg.norm(atoms[i].position - atoms[l].position -
                                       np.dot(offsetl, cell))
                 if dist > cut:
                     continue  # too far away
@@ -424,18 +429,18 @@ minimize        1.0e-14 1.0e-5 100000 100000
                                                       jname, kname)
                 if name is None:
                     continue  # don't have it
-                append(name, L, i, j, k)
+                append(name, l, i, j, k)
 
             # search for i-j-k-l
             indicesk, offsetsk = self.nl.get_neighbors(k)
-            for L, offsetl in zip(indicesk, offsetsk):
-                if L == j:
+            for l, offsetl in zip(indicesk, offsetsk):
+                if l == j:
                     continue  # avoid double count
-                lname = types[tags[L]]
+                lname = types[tags[l]]
                 cut = cutoffs.value(kname, lname)
                 if cut is None:
                     continue  # don't have it
-                dist = np.linalg.norm(atoms[k].position - atoms[L].position -
+                dist = np.linalg.norm(atoms[k].position - atoms[l].position -
                                       np.dot(offsetl, cell))
                 if dist > cut:
                     continue  # too far away
@@ -443,17 +448,17 @@ minimize        1.0e-14 1.0e-5 100000 100000
                                                       kname, lname)
                 if name is None:
                     continue  # don't have it
-                append(name, i, j, k, L)
+                append(name, i, j, k, l)
 
         return dih_types, dih_list
 
     def write_lammps_definitions(self, atoms, btypes, atypes, dtypes):
         """Write force field definitions for LAMMPS."""
-        with open(self.prefix + '_opls', 'w') as fd:
-            self._write_lammps_definitions(fd, atoms, btypes, atypes, dtypes)
 
-    def _write_lammps_definitions(self, fileobj, atoms, btypes, atypes,
-                                  dtypes):
+        fileobj = self.prefix + '_opls'
+        if isinstance(fileobj, basestring):
+            fileobj = open(fileobj, 'w')
+
         fileobj.write('# OPLS potential\n')
         fileobj.write('# write_lammps' +
                       str(time.asctime(time.localtime(time.time()))))
@@ -607,6 +612,9 @@ class OPLSStructure(Atoms):
 
         update_types: update atom types from the masses
         """
+        if isinstance(fileobj, basestring):
+            fileobj = open(fileobj, 'r')
+
         lines = fileobj.readlines()
         lines.pop(0)
 
@@ -625,7 +633,7 @@ class OPLSStructure(Atoms):
 
         next_entry()
         header = {}
-        while True:
+        while(True):
             line = lines.pop(0).strip()
             if len(line):
                 w = line.split()
@@ -636,7 +644,7 @@ class OPLSStructure(Atoms):
             else:
                 break
 
-        while not lines.pop(0).startswith('Atoms'):
+        while(not lines.pop(0).startswith('Atoms')):
             pass
         lines.pop(0)
 

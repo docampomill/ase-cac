@@ -87,3 +87,4 @@ class AtomicCounterIon(Calculator):
 
         self.results['energy'] = energy
         self.results['forces'] = forces
+

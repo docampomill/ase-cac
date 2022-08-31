@@ -21,7 +21,7 @@ def test_raw_score(atoms):
     assert 'raw_score' in atoms.info['key_value_pairs'], err_msg
 
 
-class DataConnection:
+class DataConnection(object):
     """Class that handles all database communication.
 
     All data communication is collected in this class in order to
@@ -407,7 +407,7 @@ class DataConnection:
             self.c.update(dct.id, extinct=1)
 
 
-class PrepareDB:
+class PrepareDB(object):
     """ Class used to initialize a database.
 
         This class is used once to setup the database and create

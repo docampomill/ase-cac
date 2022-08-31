@@ -371,7 +371,7 @@ subscript_dict = {
 }
 
 
-def replace_subscript(s: str, subscript=True) -> str:
+def replace_subscript(s, subscript=True):
 
     target = '~'
     rdict = subscript_dict
@@ -395,7 +395,7 @@ def replace_subscript(s: str, subscript=True) -> str:
     return ''.join(replaced)
 
 
-def multiple_replace(text: str, adict) -> str:
+def multiple_replace(text, adict):
     rx = re.compile('|'.join(map(re.escape, adict)))
 
     def one_xlat(match):
@@ -404,7 +404,7 @@ def multiple_replace(text: str, adict) -> str:
     return rx.sub(one_xlat, text)
 
 
-def format_unicode(s: str) -> str:
+def format_unicode(s):
     """Converts a string in CIF text-format to unicode.  Any HTML tags
     contained in the string are removed.  HTML numeric character references
     are unescaped (i.e. converted to unicode).
@@ -426,7 +426,7 @@ def format_unicode(s: str) -> str:
     return re.sub(tagclean, '', s)
 
 
-def handle_subscripts(s: str) -> str:
+def handle_subscripts(s):
     s = replace_subscript(s, subscript=True)
     s = replace_subscript(s, subscript=False)
     return s

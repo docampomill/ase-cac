@@ -4,7 +4,7 @@ This module defines a number of functions that can be used to
 extract and delete data from BundleTrajectories directly on
 disk.  The functions are intended for large-scale MD output,
 so they avoid copying the potentially large amounts of data.
-Instead, data is either directly deleted in-place; or copies
+In stead, data is either directly deleted in-place; or copies
 are made by creating a new directory structure, but hardlinking
 the data files.  Hard links makes it possible to delete the
 original data without invalidating the copy.
@@ -14,13 +14,11 @@ Usage from command line:
 python -m ase.io.bundlemanipulate inbundle outbundle [start [end [step]]]
 """
 
+from ase.io.bundletrajectory import PickleBundleBackend, UlmBundleBackend
 import os
+import pickle
 import json
-from typing import Optional
-
 import numpy as np
-
-from ase.io.bundletrajectory import UlmBundleBackend
 
 
 def copy_frames(inbundle, outbundle, start=0, end=None, step=1,
@@ -31,15 +29,15 @@ def copy_frames(inbundle, outbundle, start=0, end=None, step=1,
             isinstance(step, int)):
         raise TypeError("copy_frames: start, end and step must be integers.")
     metadata, nframes = read_bundle_info(inbundle)
-
     if metadata['backend'] == 'ulm':
+        ulm = True
         backend = UlmBundleBackend(True, metadata['ulm.singleprecision'])
-    elif metadata['backend'] == 'pickle':
-        raise IOError("Input BundleTrajectory uses the 'pickle' backend.  " +
-                      "This is not longer supported for security reasons")
     else:
-        raise IOError("Unknown backend type '{}'".format(metadata['backend']))
-
+        ulm = False
+        assert(metadata['backend'] == 'pickle')
+        backend = PickleBundleBackend(True)
+        backend.readpy2 = False
+        
     if start < 0:
         start += nframes
     if end is None:
@@ -55,11 +53,11 @@ def copy_frames(inbundle, outbundle, start=0, end=None, step=1,
     frames = list(range(start, end, step))
     if verbose:
         print("Copying the frames", frames)
-
+    
     # Make the new bundle directory
     os.mkdir(outbundle)
-    with open(os.path.join(outbundle, 'metadata.json'), 'w') as fd:
-        json.dump(metadata, fd, indent=2)
+    with open(os.path.join(outbundle, 'metadata.json'), 'w') as f:
+        json.dump(metadata, f, indent=2)
 
     for nout, nin in enumerate(frames):
         if verbose:
@@ -75,7 +73,7 @@ def copy_frames(inbundle, outbundle, start=0, end=None, step=1,
         if nout == 0 and nin != 0:
             if verbose:
                 print("F0 -> F0 (supplemental)")
-            # The smalldata.ulm stuff must be updated.
+            # The smalldata.pickle stuff must be updated.
             # At the same time, check if the number of fragments
             # has not changed.
             data0 = backend.read_small(os.path.join(inbundle, "F0"))
@@ -102,11 +100,12 @@ def copy_frames(inbundle, outbundle, start=0, end=None, step=1,
             else:
                 # Must read and rewrite data
                 # First we read the ID's from frame 0 and N
-                assert 'ID_0.ulm' in firstnames and 'ID_0.ulm' in names
+                if ulm:
+                    assert 'ID_0.ulm' in firstnames and 'ID_0.ulm' in names
+                else:
+                    assert 'ID_0.pickle' in firstnames and 'ID_0.pickle' in names
                 backend.nfrag = fragments0
-                f0_id, dummy = backend.read_split(
-                    os.path.join(inbundle, "F0"), "ID"
-                )
+                f0_id, dummy = backend.read_split(os.path.join(inbundle, "F0"), "ID")
                 backend.nfrag = fragments1
                 fn_id, fn_sizes = backend.read_split(indir, "ID")
                 for name in firstnames:
@@ -118,9 +117,7 @@ def copy_frames(inbundle, outbundle, start=0, end=None, step=1,
                         arrayname = name.split('_')[0]
                         print("    Reading", arrayname)
                         backend.nfrag = fragments0
-                        f0_data, dummy = backend.read_split(
-                            os.path.join(inbundle, "F0"), arrayname
-                        )
+                        f0_data, dummy = backend.read_split(os.path.join(inbundle, "F0"), arrayname)
                         # Sort data
                         f0_data[f0_id] = np.array(f0_data)
                         # Unsort with new ordering
@@ -130,46 +127,43 @@ def copy_frames(inbundle, outbundle, start=0, end=None, step=1,
                         pointer = 0
                         backend.nfrag = fragments1
                         for i, s in enumerate(fn_sizes):
-                            segment = f0_data[pointer:pointer + s]
+                            segment = f0_data[pointer:pointer+s]
                             pointer += s
-                            backend.write(outdir, '{}_{}'.format(arrayname, i),
-                                          segment)
+                            backend.write(outdir, arrayname+"_{0}".format(i), segment)
     # Finally, write the number of frames
-    with open(os.path.join(outbundle, 'frames'), 'w') as fd:
-        fd.write(str(len(frames)) + '\n')
-
+    f = open(os.path.join(outbundle, 'frames'), 'w')
+    f.write(str(len(frames)) + '\n')
+    f.close()
+    
 
 # Helper functions
 def read_bundle_info(name):
     """Read global info about a bundle.
-
+    
     Returns (metadata, nframes)
     """
     if not os.path.isdir(name):
         raise IOError("No directory (bundle) named '%s' found." % (name,))
-
-    metaname = os.path.join(name, 'metadata.json')
-
-    if not os.path.isfile(metaname):
-        if os.path.isfile(os.path.join(name, 'metadata')):
-            raise IOError(
-                "Found obsolete metadata in unsecure Pickle format.  "
-                "Refusing to load.")
+    metaname = bestmetaname = os.path.join(name, 'metadata.json')
+    if os.path.isfile(metaname):
+        with open(metaname) as f:
+            mdata = json.load(f)
+    else:
+        metaname = os.path.join(name, 'metadata')
+        if os.path.isfile(metaname):
+            with open(metaname, "rb") as f:
+                mdata = pickle.load(f)
         else:
-            raise IOError("'{}' does not appear to be a BundleTrajectory "
-                          "(no {})".format(name, metaname))
-
-    with open(metaname) as fd:
-        mdata = json.load(fd)
-
+            raise IOError("'%s' does not appear to be a BundleTrajectory (no %s)"
+                        % (name, bestmetaname))
     if 'format' not in mdata or mdata['format'] != 'BundleTrajectory':
         raise IOError("'%s' does not appear to be a BundleTrajectory" %
                       (name,))
     if mdata['version'] != 1:
         raise IOError("Cannot manipulate BundleTrajectories with version "
                       "number %s" % (mdata['version'],))
-    with open(os.path.join(name, "frames")) as fd:
-        nframes = int(fd.read())
+    f = open(os.path.join(name, "frames"))
+    nframes = int(f.read())
     if nframes == 0:
         raise IOError("'%s' is an empty BundleTrajectory" % (name,))
     return mdata, nframes
@@ -186,7 +180,7 @@ if __name__ == '__main__':
     else:
         start = 0
     if len(sys.argv) > 4:
-        end: Optional[int] = int(sys.argv[4])
+        end = int(sys.argv[4])
     else:
         end = None
     if len(sys.argv) > 5:

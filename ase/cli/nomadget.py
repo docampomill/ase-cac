@@ -1,6 +1,4 @@
-# Note:
-# Try to avoid module level import statements here to reduce
-# import time during CLI execution
+import json
 
 
 class CLICommand:
@@ -16,7 +14,6 @@ class CLICommand:
 
     @staticmethod
     def run(args):
-        import json
         from ase.nomad import download
         for uri in args.uri:
             calculation = download(uri)

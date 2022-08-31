@@ -1,4 +1,5 @@
 from ase.calculators.calculator import Parameters
+from ase.utils import basestring
 
 """
 2017.04 - Pedro Brandimarte: changes for python 2-3 compatible
@@ -9,7 +10,6 @@ class PAOBasisBlock(Parameters):
     """
     Representing a block in PAO.Basis for one species.
     """
-
     def __init__(self, block):
         """
         Parameters:
@@ -28,7 +28,7 @@ class PAOBasisBlock(Parameters):
                                5.00 0.00
                      See siesta manual for details.
         """
-        assert isinstance(block, str)
+        assert isinstance(block, basestring)
         Parameters.__init__(self, block=block)
 
     def script(self, label):
@@ -51,7 +51,6 @@ class Species(Parameters):
     can be set be a ghost species, meaning that they will not be considered
     atoms, but the corresponding basis set will be used.
     """
-
     def __init__(self,
                  symbol,
                  basis_set='DZP',

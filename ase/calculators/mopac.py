@@ -19,20 +19,17 @@ from ase.units import kcal, mol, Debye
 class MOPAC(FileIOCalculator):
     implemented_properties = ['energy', 'forces', 'dipole', 'magmom']
     command = 'mopac PREFIX.mop 2> /dev/null'
-    discard_results_on_any_change = True
 
     default_parameters = dict(
         method='PM7',
         task='1SCF GRADIENTS',
-        charge=0,
         relscf=0.0001)
 
     methods = ['AM1', 'MNDO', 'MNDOD', 'PM3', 'PM6', 'PM6-D3', 'PM6-DH+',
                'PM6-DH2', 'PM6-DH2X', 'PM6-D3H4', 'PM6-D3H4X', 'PMEP', 'PM7',
                'PM7-TS', 'RM1']
 
-    def __init__(self, restart=None,
-                 ignore_bad_restart_file=FileIOCalculator._deprecated,
+    def __init__(self, restart=None, ignore_bad_restart_file=False,
                  label='mopac', atoms=None, **kwargs):
         """Construct MOPAC-calculator object.
 
@@ -70,6 +67,11 @@ class MOPAC(FileIOCalculator):
         FileIOCalculator.__init__(self, restart, ignore_bad_restart_file,
                                   label, atoms, **kwargs)
 
+    def set(self, **kwargs):
+        changed_parameters = FileIOCalculator.set(self, **kwargs)
+        if changed_parameters:
+            self.reset()
+
     def write_input(self, atoms, properties=None, system_changes=None):
         FileIOCalculator.write_input(self, atoms, properties, system_changes)
         p = self.parameters
@@ -81,11 +83,7 @@ class MOPAC(FileIOCalculator):
             s += 'RELSCF={0} '.format(p.relscf)
 
         # Write charge:
-        if p.charge:
-            charge = p.charge
-        else:
-            charge = atoms.get_initial_charges().sum()
-
+        charge = atoms.get_initial_charges().sum()
         if charge != 0:
             s += 'CHARGE={0} '.format(int(round(charge)))
 
@@ -104,8 +102,8 @@ class MOPAC(FileIOCalculator):
             if p:
                 s += 'Tv {0} {1} {2}\n'.format(*v)
 
-        with open(self.label + '.mop', 'w') as fd:
-            fd.write(s)
+        with open(self.label + '.mop', 'w') as f:
+            f.write(s)
 
     def get_spin_polarized(self):
         return self.nspins == 2
@@ -120,8 +118,8 @@ class MOPAC(FileIOCalculator):
         if not os.path.isfile(self.label + '.out'):
             raise ReadError
 
-        with open(self.label + '.out') as fd:
-            lines = fd.readlines()
+        with open(self.label + '.out') as f:
+            lines = f.readlines()
 
         self.parameters = Parameters(task='', method='')
         p = self.parameters
@@ -185,8 +183,8 @@ class MOPAC(FileIOCalculator):
         if not os.path.isfile(self.label + '.out'):
             raise ReadError
 
-        with open(self.label + '.out') as fd:
-            lines = fd.readlines()
+        with open(self.label + '.out') as f:
+            lines = f.readlines()
 
         for i, line in enumerate(lines):
             if line.find('TOTAL ENERGY') != -1:
@@ -199,7 +197,7 @@ class MOPAC(FileIOCalculator):
             elif line.find('NO. OF ALPHA ELECTRON') != -1:
                 self.nspins = 2
                 self.no_alpha_electrons = int(line.split()[-1])
-                self.no_beta_electrons = int(lines[i + 1].split()[-1])
+                self.no_beta_electrons = int(lines[i+1].split()[-1])
                 self.results['magmom'] = abs(self.no_alpha_electrons -
                                              self.no_beta_electrons)
             elif line.find('FINAL  POINT  AND  DERIVATIVES') != -1:

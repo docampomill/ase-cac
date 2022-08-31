@@ -12,7 +12,6 @@ from collections import OrderedDict
 import ase.units
 from ase.atoms import Atoms
 from ase.spacegroup import Spacegroup
-from ase.spacegroup.spacegroup import SpacegroupNotFoundError
 from ase.calculators.singlepoint import SinglePointDFTCalculator
 
 _mprops = {
@@ -324,7 +323,7 @@ def read_magres(fd, include_unrecognised=False):
     if 'symmetry' in data_dict['atoms']:
         try:
             spg = Spacegroup(data_dict['atoms']['symmetry'][0])
-        except SpacegroupNotFoundError:
+        except:
             # Not found
             spg = Spacegroup(1)  # Most generic one
         atoms.info['spacegroup'] = spg
@@ -366,10 +365,7 @@ def read_magres(fd, include_unrecognised=False):
                 ai1, ai2 = sorted((ai1, ai2), reverse=True)
                 u_arr[ai1][ai2] = s[mn]
 
-        if order == 1:
-            return np.array(u_arr)
-        else:
-            return np.array(u_arr, dtype=object)
+        return np.array(u_arr)
 
     if 'magres' in data_dict:
         if 'units' in data_dict['magres']:
@@ -392,11 +388,10 @@ def read_magres(fd, include_unrecognised=False):
                     #                                            {})
                     # # We only take element 0 because for this sort of data
                     # # there should be only that
-                    # atoms.info['magres_data'][u] = \
-                    #     data_dict['magres'][u][0][mn]
+                    # atoms.info['magres_data'][u] = data_dict['magres'][u][0][mn]
                     if atoms.calc is None:
                         calc = SinglePointDFTCalculator(atoms)
-                        atoms.calc = calc
+                        atoms.set_calculator(calc)
                         atoms.calc.results[u] = data_dict['magres'][u][0][mn]
 
     if 'calculation' in data_dict:
@@ -424,7 +419,7 @@ def write_magres(fd, image):
     image_data['atoms'] = {'units': []}
     # Contains units, lattice and each individual atom
     if np.all(image.get_pbc()):
-        # Has lattice!
+            # Has lattice!
         image_data['atoms']['units'].append(['lattice', 'Angstrom'])
         image_data['atoms']['lattice'] = [image.get_cell()]
 
@@ -500,7 +495,7 @@ def write_magres(fd, image):
                                 tens = {mn: arr[i],
                                         'atom': {'label': lab,
                                                  'index': ind}}
-                                image_data['magres'][u].append(tens)
+                                image_data['magres'][u].append(tens)                
 
     # Calculation block, if present
     if 'magresblock_calculation' in image.info:
@@ -520,8 +515,8 @@ def write_magres(fd, image):
 
         def nout(tag, tensor_name):
             if tag in data:
-                out.append(' '.join([' ', tag,
-                                     tensor_string(data[tag][tensor_name])]))
+                out.append(('  %s %s') % (tag, 
+                                          tensor_string(data[tag][tensor_name])))
 
         def siout(tag, tensor_name):
             if tag in data:

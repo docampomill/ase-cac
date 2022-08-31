@@ -5,6 +5,7 @@ from ase.optimize.fire import FIRE
 from ase.units import kB
 from ase.parallel import world
 from ase.io.trajectory import Trajectory
+from ase.utils import basestring
 
 
 class BasinHopping(Dynamics):
@@ -50,9 +51,9 @@ class BasinHopping(Dynamics):
 
         self.optimizer_logfile = optimizer_logfile
         self.lm_trajectory = local_minima_trajectory
-        if isinstance(local_minima_trajectory, str):
-            self.lm_trajectory = self.closelater(
-                Trajectory(local_minima_trajectory, 'w', atoms))
+        if isinstance(local_minima_trajectory, basestring):
+            self.lm_trajectory = Trajectory(local_minima_trajectory,
+                                            'w', atoms)
 
         Dynamics.__init__(self, atoms, logfile, trajectory)
         self.initialize()
@@ -133,9 +134,9 @@ class BasinHopping(Dynamics):
             self.positions = positions
             self.atoms.set_positions(positions)
 
-            with self.optimizer(self.atoms,
-                                logfile=self.optimizer_logfile) as opt:
-                opt.run(fmax=self.fmax)
+            opt = self.optimizer(self.atoms,
+                                 logfile=self.optimizer_logfile)
+            opt.run(fmax=self.fmax)
             if self.lm_trajectory is not None:
                 self.lm_trajectory.write(self.atoms)
 

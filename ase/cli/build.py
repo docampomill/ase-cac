@@ -1,8 +1,16 @@
-# Note:
-# Try to avoid module level import statements here to reduce
-# import time during CLI execution
 import sys
+
 import numpy as np
+
+from ase.db import connect
+from ase.build import bulk
+from ase.io import read, write
+from ase.visualize import view
+from ase.build import molecule
+from ase.atoms import Atoms
+from ase.symbols import string2symbols
+from ase.data import ground_state_magnetic_moments
+from ase.data import atomic_numbers, covalent_radii
 
 
 class CLICommand:
@@ -75,10 +83,6 @@ class CLICommand:
 
     @staticmethod
     def run(args, parser):
-        from ase.db import connect
-        from ase.io import read, write
-        from ase.visualize import view
-
         if args.vacuum0:
             parser.error('Please use -V or --vacuum instead!')
 
@@ -118,16 +122,10 @@ class CLICommand:
 
 
 def build_molecule(args):
-    from ase.atoms import Atoms
-    from ase.build import molecule
-    from ase.data import ground_state_magnetic_moments
-    from ase.data import atomic_numbers, covalent_radii
-    from ase.symbols import string2symbols
-
     try:
         # Known molecule or atom?
         atoms = molecule(args.name)
-    except (NotImplementedError, KeyError):
+    except NotImplementedError:
         symbols = string2symbols(args.name)
         if len(symbols) == 1:
             Z = atomic_numbers[symbols[0]]
@@ -181,8 +179,6 @@ def build_molecule(args):
 
 
 def build_bulk(args):
-    from ase.build import bulk
-
     L = args.lattice_constant.replace(',', ' ').split()
     d = dict([(key, float(x)) for key, x in zip('ac', L)])
     atoms = bulk(args.name, crystalstructure=args.crystal_structure,

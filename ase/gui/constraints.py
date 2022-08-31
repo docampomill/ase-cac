@@ -4,12 +4,14 @@ from ase.gui.i18n import _
 
 class Constraints:
     def __init__(self, gui):
-        win = ui.Window(_('Constraints'), wmtype='utility')
-        win.add([ui.Button(_('Fix'), self.selected),
+        win = ui.Window(_('Constraints'))
+        win.add([ui.Button(_('Constrain'), self.selected),
                  _('selected atoms')])
-        win.add([ui.Button(_('Release'), self.unconstrain),
+        win.add([ui.Button(_('Constrain'), self.immobile),
+                 _('immobile atoms')])
+        win.add([ui.Button(_('Unconstrain'), self.unconstrain),
                  _('selected atoms')])
-        win.add(ui.Button(_('Clear all constraints'), self.clear))
+        win.add(ui.Button(_('Clear constraints'), self.clear))
         self.gui = gui
 
     def selected(self):
@@ -18,6 +20,11 @@ class Constraints:
 
     def unconstrain(self):
         self.gui.images.set_dynamic(self.gui.images.selected, True)
+        self.gui.draw()
+
+    def immobile(self):
+        # XXX not working.
+        # Should constrain atoms that are not moving
         self.gui.draw()
 
     def clear(self):

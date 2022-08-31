@@ -52,22 +52,21 @@ import numpy as np
 from ase import Atom, Atoms
 from ase.geometry.cell import cell_to_cellpar, cellpar_to_cell
 from ase.units import Bohr
-from ase.utils import reader, writer
 
 
-@writer
-def write_dmol_car(fd, atoms):
+def write_dmol_car(filename, atoms):
     """ Write a dmol car-file from an Atoms object
 
     Notes
     -----
-    The positions written to file are rotated as to align with the cell when
+    The positions written to file are rotated as to allign with the cell when
     reading (due to cellpar information)
     Can not handle multiple images.
     Only allows for pbc 111 or 000.
     """
 
-    fd.write('!BIOSYM archive 3\n')
+    f = open(filename, 'w')
+    f.write('!BIOSYM archive 3\n')
     dt = datetime.now()
 
     symbols = atoms.get_chemical_symbols()
@@ -80,24 +79,24 @@ def write_dmol_car(fd, atoms):
         R = lstsq_fit[0]
         positions = np.dot(atoms.positions, R)
 
-        fd.write('PBC=ON\n\n')
-        fd.write('!DATE     %s\n' % dt.strftime('%b %d %H:%M:%S %Y'))
-        fd.write('PBC %9.5f %9.5f %9.5f %9.5f %9.5f %9.5f\n' % tuple(cellpar))
+        f.write('PBC=ON\n\n')
+        f.write('!DATE     %s\n' % dt.strftime('%b %d %H:%m:%S %Y'))
+        f.write('PBC %9.5f %9.5f %9.5f %9.5f %9.5f %9.5f\n' % tuple(cellpar))
     elif not np.any(atoms.pbc):  # [False,False,False]
-        fd.write('PBC=OFF\n\n')
-        fd.write('!DATE     %s\n' % dt.strftime('%b %d %H:%M:%S %Y'))
+        f.write('PBC=OFF\n\n')
+        f.write('!DATE     %s\n' % dt.strftime('%b %d %H:%m:%S %Y'))
         positions = atoms.positions
     else:
         raise ValueError('PBC must be all true or all false for .car format')
 
     for i, (sym, pos) in enumerate(zip(symbols, positions)):
-        fd.write('%-6s  %12.8f   %12.8f   %12.8f XXXX 1      xx      %-2s  '
-                 '0.000\n' % (sym + str(i + 1), pos[0], pos[1], pos[2], sym))
-    fd.write('end\nend\n')
+        f.write('%-6s  %12.8f   %12.8f   %12.8f XXXX 1      xx      %-2s  '
+                '0.000\n' % (sym + str(i+1), pos[0], pos[1], pos[2], sym))
+    f.write('end\nend\n')
+    f.close()
 
 
-@reader
-def read_dmol_car(fd):
+def read_dmol_car(filename):
     """ Read a dmol car-file and return an Atoms object.
 
     Notes
@@ -105,7 +104,7 @@ def read_dmol_car(fd):
     Cell is constructed from cellpar so orientation of cell might be off.
     """
 
-    lines = fd.readlines()
+    lines = open(filename, 'r').readlines()
     atoms = Atoms()
 
     start_line = 4
@@ -132,8 +131,7 @@ def read_dmol_car(fd):
     return atoms
 
 
-@writer
-def write_dmol_incoor(fd, atoms, bohr=True):
+def write_dmol_incoor(filename, atoms, bohr=True):
     """ Write a dmol incoor-file from an Atoms object
 
     Notes
@@ -154,23 +152,24 @@ def write_dmol_incoor(fd, atoms, bohr=True):
         cell = atoms.cell
         positions = atoms.positions
 
-    fd.write('$cell vectors\n')
-    fd.write('            %18.14f  %18.14f  %18.14f\n' % (
+    f = open(filename, 'w')
+    f.write('$cell vectors\n')
+    f.write('            %18.14f  %18.14f  %18.14f\n' % (
         cell[0, 0], cell[0, 1], cell[0, 2]))
-    fd.write('            %18.14f  %18.14f  %18.14f\n' % (
+    f.write('            %18.14f  %18.14f  %18.14f\n' % (
         cell[1, 0], cell[1, 1], cell[1, 2]))
-    fd.write('            %18.14f  %18.14f  %18.14f\n' % (
+    f.write('            %18.14f  %18.14f  %18.14f\n' % (
         cell[2, 0], cell[2, 1], cell[2, 2]))
 
-    fd.write('$coordinates\n')
+    f.write('$coordinates\n')
     for a, pos in zip(atoms, positions):
-        fd.write('%-12s%18.14f  %18.14f  %18.14f \n' % (
+        f.write('%-12s%18.14f  %18.14f  %18.14f \n' % (
             a.symbol, pos[0], pos[1], pos[2]))
-    fd.write('$end\n')
+    f.write('$end\n')
+    f.close()
 
 
-@reader
-def read_dmol_incoor(fd, bohr=True):
+def read_dmol_incoor(filename, bohr=True):
     """ Reads an incoor file and returns an atoms object.
 
     Notes
@@ -179,7 +178,7 @@ def read_dmol_incoor(fd, bohr=True):
     is rescaled to Angstrom.
     """
 
-    lines = fd.readlines()
+    lines = open(filename, 'r').readlines()
     symbols = []
     positions = []
     for i, line in enumerate(lines):
@@ -203,19 +202,19 @@ def read_dmol_incoor(fd, bohr=True):
     return atoms
 
 
-@writer
-def write_dmol_arc(fd, images):
+def write_dmol_arc(filename, images):
     """ Writes all images to file filename in arc format.
 
     Similar to the .car format only pbc 111 or 000 is supported.
     """
 
-    fd.write('!BIOSYM archive 3\n')
+    f = open(filename, 'w')
+    f.write('!BIOSYM archive 3\n')
     if np.all(images[0].pbc):
-        fd.write('PBC=ON\n\n')
-        # Rotate positions so they will align with cellpar cell
+        f.write('PBC=ON\n\n')
+        # Rotate positions so they will allign with cellpar cell
     elif not np.any(images[0].pbc):
-        fd.write('PBC=OFF\n\n')
+        f.write('PBC=OFF\n\n')
     else:
         raise ValueError('PBC must be all true or all false for .arc format')
     for atoms in images:
@@ -226,29 +225,28 @@ def write_dmol_arc(fd, images):
             new_cell = cellpar_to_cell(cellpar)
             lstsq_fit = np.linalg.lstsq(atoms.cell, new_cell, rcond=-1)
             R = lstsq_fit[0]
-            fd.write('!DATE     %s\n' % dt.strftime('%b %d %H:%m:%S %Y'))
-            fd.write('PBC %9.5f %9.5f %9.5f %9.5f %9.5f %9.5f\n'
-                     % tuple(cellpar))
+            f.write('!DATE     %s\n' % dt.strftime('%b %d %H:%m:%S %Y'))
+            f.write('PBC %9.5f %9.5f %9.5f %9.5f %9.5f %9.5f\n'
+                    % tuple(cellpar))
             positions = np.dot(atoms.positions, R)
         elif not np.any(atoms.pbc):  # [False,False,False]
-            fd.write('!DATE     %s\n' % dt.strftime('%b %d %H:%m:%S %Y'))
+            f.write('!DATE     %s\n' % dt.strftime('%b %d %H:%m:%S %Y'))
             positions = atoms.positions
         else:
             raise ValueError(
                 'PBC must be all true or all false for .arc format')
         for i, (sym, pos) in enumerate(zip(symbols, positions)):
-            fd.write(
-                '%-6s  %12.8f   %12.8f   %12.8f XXXX 1      xx      %-2s  '
-                '0.000\n' % (sym + str(i + 1), pos[0], pos[1], pos[2], sym))
-        fd.write('end\nend\n')
-        fd.write('\n')
+            f.write('%-6s  %12.8f   %12.8f   %12.8f XXXX 1      xx      %-2s  '
+                    '0.000\n' % (sym + str(i+1), pos[0], pos[1], pos[2], sym))
+        f.write('end\nend\n')
+        f.write('\n')
+    f.close()
 
 
-@reader
-def read_dmol_arc(fd, index=-1):
+def read_dmol_arc(filename, index=-1):
     """ Read a dmol arc-file and return a series of Atoms objects (images). """
 
-    lines = fd.readlines()
+    lines = open(filename, 'r').readlines()
     images = []
 
     if lines[1].startswith('PBC=ON'):
@@ -256,7 +254,8 @@ def read_dmol_arc(fd, index=-1):
     elif lines[1].startswith('PBC=OFF'):
         pbc = False
     else:
-        raise RuntimeError('Could not read pbc from second line in file')
+        raise RuntimeError('Could not read pbc from second line in %s'
+                           % filename)
 
     i = 0
     while i < len(lines):
@@ -289,6 +288,25 @@ def read_dmol_arc(fd, index=-1):
     if isinstance(index, int):
         return images[index]
     else:
-        from ase.io.formats import index2range
-        indices = index2range(index, len(images))
-        return [images[j] for j in indices]
+        step = index.step or 1
+        if step > 0:
+            start = index.start or 0
+            if start < 0:
+                start += len(images)
+            stop = index.stop or len(images)
+            if stop < 0:
+                stop += len(images)
+        else:
+            if index.start is None:
+                start = len(images) - 1
+            else:
+                start = index.start
+                if start < 0:
+                    start += len(images)
+            if index.stop is None:
+                stop = -1
+            else:
+                stop = index.stop
+                if stop < 0:
+                    stop += len(images)
+        return [images[j] for j in range(start, stop, step)]

@@ -3,44 +3,18 @@
 # Copyright (C) 2007-2017  CAMd
 # Please see the accompanying LICENSE file for further information.
 
+from __future__ import print_function
 import os
 import re
 import sys
 from setuptools import setup, find_packages
-from setuptools.command.build_py import build_py as _build_py
+from distutils.command.build_py import build_py as _build_py
 from glob import glob
 from os.path import join
 
-python_min_version = (3, 6)
-python_requires = '>=' + '.'.join(str(num) for num in python_min_version)
 
-
-if sys.version_info < python_min_version:
-    raise SystemExit('Python 3.6 or later is required!')
-
-
-install_requires = [
-    'numpy>=1.17.0',  # July 2019
-    'scipy>=1.3.1',  # August 2019
-    'matplotlib>=3.1.0',  # May 2019
-    'importlib-metadata>=0.12;python_version<"3.8"'
-]
-
-
-extras_require = {
-    'docs': [
-        'sphinx',
-        'sphinx_rtd_theme',
-        'pillow',
-    ],
-    'test': [
-        'pytest>=5.0.0',  # required by pytest-mock
-        'pytest-mock>=3.3.0',
-        'pytest-xdist>=1.30.0',
-    ]
-}
-
-# Optional: spglib >= 1.9
+if sys.version_info < (3, 5, 0, 'final', 0):
+    raise SystemExit('Python 3.5 or later is required!')
 
 
 with open('README.rst') as fd:
@@ -54,15 +28,11 @@ with open('ase/__init__.py') as fd:
 package_data = {'ase': ['spacegroup/spacegroup.dat',
                         'collections/*.json',
                         'db/templates/*',
-                        'db/static/*'],
-                'ase.test': ['pytest.ini',
-                             'testdata/*',
-                             'testdata/*/*',
-                             'testdata/*/*/*']}
+                        'db/static/*']}
 
 
 class build_py(_build_py):
-    """Custom command to build translations."""
+    """Custom distutils command to build translations."""
     def __init__(self, *args, **kwargs):
         _build_py.__init__(self, *args, **kwargs)
         # Keep list of files to appease bdist_rpm.  We have to keep track of
@@ -100,9 +70,8 @@ setup(name='ase',
       license='LGPLv2.1+',
       platforms=['unix'],
       packages=find_packages(),
-      python_requires=python_requires,
-      install_requires=install_requires,
-      extras_require=extras_require,
+      install_requires=['numpy', 'scipy', 'matplotlib'],
+      extras_require={'docs': ['sphinx', 'sphinx_rtd_theme', 'pillow']},
       package_data=package_data,
       entry_points={'console_scripts': ['ase=ase.cli.main:main',
                                         'ase-db=ase.cli.main:old',

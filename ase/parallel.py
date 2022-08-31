@@ -1,11 +1,13 @@
-import os
 import atexit
 import functools
 import pickle
 import sys
 import time
+import warnings
 
 import numpy as np
+
+from ase.utils import devnull
 
 
 def get_txt(txt, rank):
@@ -14,26 +16,24 @@ def get_txt(txt, rank):
         return txt
     elif rank == 0:
         if txt is None:
-            return open(os.devnull, 'w')
+            return devnull
         elif txt == '-':
             return sys.stdout
         else:
             return open(txt, 'w', 1)
     else:
-        return open(os.devnull, 'w')
+        return devnull
 
 
-def paropen(name, mode='r', buffering=-1, encoding=None, comm=None):
+def paropen(name, mode='r', buffering=-1, encoding=None):
     """MPI-safe version of open function.
 
     In read mode, the file is opened on all nodes.  In write and
     append mode, the file is opened on the master only, and /dev/null
     is opened on all other nodes.
     """
-    if comm is None:
-        comm = world
-    if comm.rank > 0 and mode[0] != 'r':
-        name = os.devnull
+    if world.rank > 0 and mode[0] != 'r':
+        name = '/dev/null'
     return open(name, mode, buffering, encoding)
 
 
@@ -81,21 +81,10 @@ class MPI:
     * a dummy implementation for serial runs
 
     """
-
     def __init__(self):
         self.comm = None
 
     def __getattr__(self, name):
-        # Pickling of objects that carry instances of MPI class
-        # (e.g. NEB) raises RecursionError since it tries to access
-        # the optional __setstate__ method (which we do not implement)
-        # when unpickling. The two lines below prevent the
-        # RecursionError. This also affects modules that use pickling
-        # e.g. multiprocessing.  For more details see:
-        # https://gitlab.com/ase/ase/-/merge_requests/2695
-        if name == '__setstate__':
-            raise AttributeError(name)
-
         if self.comm is None:
             self.comm = _get_comm()
         return getattr(self.comm, name)
@@ -109,10 +98,6 @@ def _get_comm():
         import _gpaw
         if hasattr(_gpaw, 'Communicator'):
             return _gpaw.Communicator()
-    if '_asap' in sys.modules:
-        import _asap
-        if hasattr(_asap, 'Communicator'):
-            return _asap.Communicator()
     return DummyMPI()
 
 
@@ -200,12 +185,6 @@ elif '_gpaw' in sys.modules:
         world = _gpaw.Communicator()
     except AttributeError:
         pass
-elif '_asap' in sys.modules:
-    import _asap
-    try:
-        world = _asap.Communicator()
-    except AttributeError:
-        pass
 elif 'mpi4py' in sys.modules:
     world = MPI4PY()
 
@@ -249,7 +228,7 @@ def parallel_function(func):
     def new_func(*args, **kwargs):
         if (world.size == 1 or
             args and getattr(args[0], 'serial', False) or
-                not kwargs.pop('parallel', True)):
+            not kwargs.pop('parallel', True)):
             # Disable:
             return func(*args, **kwargs)
 
@@ -280,7 +259,7 @@ def parallel_generator(generator):
     def new_generator(*args, **kwargs):
         if (world.size == 1 or
             args and getattr(args[0], 'serial', False) or
-                not kwargs.pop('parallel', True)):
+            not kwargs.pop('parallel', True)):
             # Disable:
             for result in generator(*args, **kwargs):
                 yield result
@@ -296,14 +275,14 @@ def parallel_generator(generator):
                 raise ex
             broadcast((None, None))
         else:
-            ex2, result = broadcast((None, None))
-            if ex2 is not None:
-                raise ex2
+            ex, result = broadcast((None, None))
+            if ex is not None:
+                raise ex
             while result is not None:
                 yield result
-                ex2, result = broadcast((None, None))
-                if ex2 is not None:
-                    raise ex2
+                ex, result = broadcast((None, None))
+                if ex is not None:
+                    raise ex
 
     return new_generator
 
@@ -354,7 +333,16 @@ def distribute_cpus(size, comm):
     return mycomm, comm.size // size, tasks_rank
 
 
-def myslice(ntotal, comm):
-    """Return the slice of your tasks for ntotal jobs"""
-    n = -(-ntotal // comm.size)  # ceil divide
-    return slice(n * comm.rank, n * (comm.rank + 1))
+class ParallelModuleWrapper:
+    def __getattr__(self, name):
+        if name == 'rank' or name == 'size':
+            warnings.warn('ase.parallel.{name} has been deprecated.  '
+                          'Please use ase.parallel.world.{name} instead.'
+                          .format(name=name),
+                          FutureWarning)
+            return getattr(world, name)
+        return getattr(_parallel, name)
+
+
+_parallel = sys.modules['ase.parallel']
+sys.modules['ase.parallel'] = ParallelModuleWrapper()

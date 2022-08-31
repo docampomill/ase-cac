@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """This module defines an interface to ONETEP for use by the ASE.
 
 Authors:
@@ -59,8 +60,8 @@ class Onetep(FileIOCalculator):
     # other than those above (the contents of the parameter is reproduced
     # verbatim within the block)
     _block_parameters = _path_parameters + _group_parameters + [
-        'species_constraints', 'nbo_species_ngwflabel',
-        'ddec_rmse_vdw', 'vdw_params', 'sol_ions', 'swri']
+                        'species_constraints', 'nbo_species_ngwflabel',
+                        'ddec_rmse_vdw', 'vdw_params', 'sol_ions', 'swri']
 
     default_parameters = {'cutoff_energy': '1000 eV',
                           'kernel_cutoff': '1000 bohr',
@@ -69,8 +70,7 @@ class Onetep(FileIOCalculator):
 
     name = 'onetep'
 
-    def __init__(self, restart=None,
-                 ignore_bad_restart_file=FileIOCalculator._deprecated,
+    def __init__(self, restart=None, ignore_bad_restart_file=False,
                  label=None, command=None, atoms=None, **kwargs):
         FileIOCalculator.__init__(self, restart, ignore_bad_restart_file,
                                   label, atoms, command, **kwargs)
@@ -126,9 +126,9 @@ class Onetep(FileIOCalculator):
                 self._read_positions(out)
                 read_positions = True
             elif '%block species_cond' in clean_line:
-                self._read_species(out, cond=True)
+                self._read_species(out,cond=True)
             elif '%block species_atomic_set_cond' in clean_line:
-                self._read_species_solver(out, cond=True)
+                self._read_species_solver(out,cond=True)
             elif 'warn' in line.lower():
                 warnings.append(line)
             line = out.readline()
@@ -145,13 +145,13 @@ class Onetep(FileIOCalculator):
 
         self.read_results(label)
 
-    def read_results(self, label=None):
+    def read_results(self,label=None):
         FileIOCalculator.read_results(self)
 
         if label is None:
-            onetep_file = self.label + '.out'
+           onetep_file = self.label + '.out'
         else:
-            onetep_file = label + '.out'
+           onetep_file = label + '.out'
 
         warnings = []
 
@@ -171,8 +171,7 @@ class Onetep(FileIOCalculator):
                 self._read_geom_output(out)
             elif ('Integrated spin density' in line):
                 self.results['magmom'] = self._read_magmom(line)
-            elif ('|Excitation|    Energy (in Ha)   |     Oscillator Str'
-                  in line):
+            elif '|Excitation|    Energy (in Ha)   |     Oscillator Str' in line:
                 self._read_excitations(out)
             elif ('Dipole Moment Calculation' in line):
                 self.results['dipole'] = self._read_dipole(out)
@@ -244,11 +243,11 @@ class Onetep(FileIOCalculator):
             symbols[j] = ''.join(i for i in symbols[j] if not i.isdigit())
         for j in range(len(tags)):
             tags[j] = ''.join(i for i in tags[j] if not i.isalpha())
-            if tags[j] == '':
-                tags[j] = '0'
+            if tags[j]=='':
+               tags[j]='0'
             tags[j] = int(tags[j])
-        if len(self.atoms) != len(symbols):
-            self.atoms = Atoms(symbols=symbols, positions=positions)
+        if len(self.atoms)!=len(symbols):
+           self.atoms = Atoms(symbols=symbols,positions=positions)
         self.atoms.set_chemical_symbols(symbols)
         self.atoms.set_tags(tags)
         self.atoms.set_positions(positions)
@@ -265,7 +264,7 @@ class Onetep(FileIOCalculator):
         dipolemoment = []
         for label, pos in sorted({'dx': 6, 'dy': 2, 'dz': 2}.items()):
             assert label in line.split()
-            value = float(line.split()[pos]) * Bohr
+            value = float(line.split()[pos])*Bohr
             dipolemoment.append(value)
             line = out.readline()
 
@@ -368,17 +367,16 @@ class Onetep(FileIOCalculator):
             fields = line.split()
         self.results['forces'] = array(forces)
 
-    def _read_excitations(self, out):
+    def _read_excitations(self,out):
         """ Extract the computed electronic excitations from a onetep output
         file."""
         excitations = []
         line = out.readline()
         while line:
             words = line.split()
-            if len(words) == 0:
+            if len(words)==0:
                 break
-            excitations.append([float(words[0]), float(words[1]) * Hartree,
-                                float(words[2])])
+            excitations.append([float(words[0]),float(words[1])*Hartree,float(words[2])])
             line = out.readline()
         self.results['excitations'] = array(excitations)
 
@@ -406,8 +404,7 @@ class Onetep(FileIOCalculator):
             species_ngwf_num_var = 'species_ngwf_number_cond'
         for sp in set(zip(atoms.get_atomic_numbers(),
                           atoms.get_chemical_symbols(),
-                          ["" if i == 0 else str(i) for i in
-                           atoms.get_tags()])):
+                          ["" if i==0 else str(i) for i in atoms.get_tags()])):
             try:
                 ngrad = parameters[species_ngwf_rad_var][sp[1]]
             except KeyError:
@@ -417,10 +414,9 @@ class Onetep(FileIOCalculator):
             except KeyError:
                 ngnum = -1
             if not cond:
-                self.species.append((sp[1] + sp[2], sp[1], sp[0], ngnum, ngrad))
+                self.species.append((sp[1]+sp[2], sp[1], sp[0], ngnum, ngrad))
             else:
-                self.species_cond.append(
-                    (sp[1] + sp[2], sp[1], sp[0], ngnum, ngrad))
+                self.species_cond.append((sp[1]+sp[2], sp[1], sp[0], ngnum, ngrad))
 
     def _generate_pseudo_block(self):
         """Create a default onetep pseudopotentials block, using the
@@ -435,11 +431,10 @@ class Onetep(FileIOCalculator):
                 try:
                     pseudo_string = sp[1] + self.parameters['pseudo_suffix']
                 except KeyError:
-                    # bare elem name if pseudo suffix empty
-                    pseudo_string = sp[1]
+                    pseudo_string = sp[1] # bare elem name if pseudo suffix empty
             self.pseudos.append((sp[0], pseudo_string))
 
-    def _generate_solver_block(self, cond=False):
+    def _generate_solver_block(self,cond=False):
         """Create a default onetep pseudoatomic solvers block, using 'SOLVE'
         unless the user has set overrides for specific species by setting
         specific entries in species_solver (_cond)"""
@@ -456,7 +451,7 @@ class Onetep(FileIOCalculator):
             if not cond:
                 self.solvers.append((sp[0], atomic_string))
             else:
-                self.solvers_cond.append((sp[0], atomic_string))
+                self.solvers_cond.append((sp[0],atomic_string))
 
     def _generate_core_wf_block(self):
         """Create a default onetep core wavefunctions block, using 'NONE'
@@ -585,9 +580,9 @@ class Onetep(FileIOCalculator):
 
         keyword = 'POSITIONS_ABS'
         positions = atoms.get_positions()
-        tags = ["" if i == 0 else str(i) for i in atoms.get_tags()]
+        tags = ["" if i==0 else str(i) for i in atoms.get_tags()]
         pos_block = [('%s %8.6f %8.6f %8.6f' %
-                      (x + z, y[0], y[1], y[2])) for (x, y, z)
+                      (x+z, y[0], y[1], y[2])) for (x, y, z)
                      in zip(atoms.get_chemical_symbols(), positions, tags)]
 
         fd.write('%%BLOCK %s\n' % keyword)
@@ -604,7 +599,7 @@ class Onetep(FileIOCalculator):
         fd.write('%%ENDBLOCK %s\n\n' % keyword)
 
         if ((self.parameters['ngwf_radius_cond'] > 0) or
-                len(self.species_cond) == len(self.species)):
+            len(self.species_cond)==len(self.species)):
             keyword = 'SPECIES_COND'
             sp_block = [('%s %s %d %d %8.6f' % sp) for sp in self.species_cond]
             fd.write('%%BLOCK %s\n' % keyword)
@@ -625,7 +620,7 @@ class Onetep(FileIOCalculator):
         fd.write('%%ENDBLOCK %s\n\n' % keyword)
 
         if ((self.parameters['ngwf_radius_cond'] > 0) or
-                len(self.solvers_cond) == len(self.species)):
+            len(self.solvers_cond)==len(self.species)):
             keyword = 'SPECIES_ATOMIC_SET_COND'
             fd.write('%%BLOCK %s\n' % keyword)
             for sp in sorted(self.solvers_cond):
@@ -641,8 +636,7 @@ class Onetep(FileIOCalculator):
 
         if 'bsunfld_calculate' in self.parameters:
             if 'species_bsunfld_groups' not in self.parameters:
-                self.parameters['species_bsunfld_groups'] = \
-                    self.atoms.get_chemical_symbols()
+                self.parameters['species_bsunfld_groups'] = self.atoms.get_chemical_symbols()
 
         # Loop over parameters entries in alphabetal order, outputting
         # them as keywords or blocks as appropriate

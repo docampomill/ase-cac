@@ -120,9 +120,9 @@ Versions
 3) Changed magic string from "AFFormat" to "- of Ulm".
 """
 
+import os
 import numbers
 from pathlib import Path
-from typing import Union, Set
 
 import numpy as np
 
@@ -250,8 +250,8 @@ class Writer:
                 if not np.little_endian:
                     a.byteswap(True)
                 self.header = ('- of Ulm{0:16}'.format(tag).encode('ascii') +
-                               a.tobytes() +
-                               self.offsets.tobytes())
+                               a.tostring() +
+                               self.offsets.tostring())
             else:
                 if isinstance(fd, Path):
                     fd = fd.open('r+b')
@@ -314,7 +314,7 @@ class Writer:
             self.header = b''
 
     def fill(self, a):
-        """Fill in ndarray chunks for array currently being written."""
+        """Fill in ndarray chunks for array currently beeing written."""
         assert a.dtype == self.dtype
         assert a.shape[1:] == self.shape[len(self.shape) - a.ndim + 1:]
         self.nmissing -= a.size
@@ -423,12 +423,6 @@ class Writer:
 
 
 class DummyWriter:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, tb):
-        self.close()
-
     def add_array(self, name, shape, dtype=float):
         pass
 
@@ -472,8 +466,10 @@ class Reader:
 
         self._little_endian = _little_endian
 
-        if not hasattr(fd, 'read'):
-            fd = Path(fd).open('rb')
+        if isinstance(fd, str):
+            fd = Path(fd)
+        if isinstance(fd, Path):
+            fd = fd.open('rb')
 
         self._fd = fd
         self._index = index
@@ -535,10 +531,7 @@ class Reader:
     __dir__ = keys  # needed for tab-completion
 
     def __getattr__(self, attr):
-        try:
-            value = self._data[attr]
-        except KeyError:
-            raise AttributeError(attr)
+        value = self._data[attr]
         if isinstance(value, NDArrayReader):
             return value.read()
         return value
@@ -558,7 +551,7 @@ class Reader:
         """Get attr or value if no such attr."""
         try:
             return self.__getattr__(attr)
-        except AttributeError:
+        except KeyError:
             return value
 
     def proxy(self, name, *indices):
@@ -574,7 +567,7 @@ class Reader:
     def _read_data(self, index):
         self._fd.seek(self._offsets[index])
         size = int(readints(self._fd, 1)[0])
-        data = decode(self._fd.read(size).decode(), False)
+        data = decode(self._fd.read(size).decode())
         self._little_endian = data.pop('_little_endian', True)
         return data
 
@@ -684,18 +677,15 @@ def print_ulm_info(filename, index=None, verbose=False):
         print(b[i].tostr(verbose))
 
 
-def copy(reader: Union[str, Path, Reader],
-         writer: Union[str, Path, Writer],
-         exclude: Set[str] = set(),
-         name: str = '') -> None:
+def copy(reader, writer, exclude=set(), name=''):
     """Copy from reader to writer except for keys in exclude."""
     close_reader = False
     close_writer = False
-    if not isinstance(reader, Reader):
-        reader = Reader(reader)
+    if isinstance(reader, str):
+        reader = open(reader)
         close_reader = True
-    if not isinstance(writer, Writer):
-        writer = Writer(writer)
+    if isinstance(writer, str):
+        writer = open(writer, 'w')
         close_writer = True
     for key, value in reader._data.items():
         if name + '.' + key in exclude:
@@ -710,3 +700,34 @@ def copy(reader: Union[str, Path, Reader],
         reader.close()
     if close_writer:
         writer.close()
+
+
+class CLICommand:
+    """Manipulate/show content of ulm-file.
+
+    The ULM file format is used for ASE's trajectory files,
+    for GPAW's gpw-files and other things.
+
+    Example (show first image of a trajectory file):
+
+        ase ulm abc.traj -n 0 -v
+    """
+
+    @staticmethod
+    def add_arguments(parser):
+        add = parser.add_argument
+        add('filename', help='Name of ULM-file.')
+        add('-n', '--index', type=int,
+            help='Show only one index.  Default is to show all.')
+        add('-d', '--delete', metavar='key1,key2,...',
+            help='Remove key(s) from ULM-file.')
+        add('-v', '--verbose', action='store_true', help='More output.')
+
+    @staticmethod
+    def run(args):
+        if args.delete:
+            exclude = set('.' + key for key in args.delete.split(','))
+            copy(args.filename, args.filename + '.temp', exclude)
+            os.rename(args.filename + '.temp', args.filename)
+        else:
+            print_ulm_info(args.filename, args.index, verbose=args.verbose)

@@ -22,7 +22,7 @@ class PubchemData:
 
     def get_atoms(self):
         return self.atoms
-
+    
     def get_pubchem_data(self):
         return self.data
 
@@ -92,7 +92,7 @@ def parse_pubchem_raw(data):
     """
     a helper function for parsing the returned pubchem entries
 
-    Parameters:
+    Paramters:
         data (str):
             the raw output from pubchem in string form
 
@@ -226,10 +226,11 @@ def available_conformer_search(search, field, mock_test=False):
     return conformer_ids
 
 
-def pubchem_search(*args, mock_test=False, **kwargs):
+def pubchem_search(name=None, cid=None, smiles=None, conformer=None,
+                   silent=False, mock_test=False):
     """
     Search PubChem for the field and search input on the argument passed in
-    returning a PubchemData object. Note that only one argument may be passed
+    returning a PubchemData object. Note that only one arugment may be passed
     in at a time.
 
     Parameters:
@@ -248,17 +249,18 @@ def pubchem_search(*args, mock_test=False, **kwargs):
             requested entry
     """
 
-    search, field = analyze_input(*args, **kwargs)
+    search, field = analyze_input(name, cid, smiles, conformer, silent)
     raw_pubchem = search_pubchem_raw(search, field, mock_test=mock_test)
     atoms, data = parse_pubchem_raw(raw_pubchem)
     result = PubchemData(atoms, data)
     return result
 
 
-def pubchem_conformer_search(*args, mock_test=False, **kwargs):
+def pubchem_conformer_search(name=None, cid=None, smiles=None, conformer=None,
+                             silent=False, mock_test=False):
     """
     Search PubChem for all the conformers of a given compound.
-    Note that only one argument may be passed in at a time.
+    Note that only one arugment may be passed in at a time.
 
     Parameters:
         see `ase.data.pubchem.pubchem_search`
@@ -269,7 +271,7 @@ def pubchem_conformer_search(*args, mock_test=False, **kwargs):
             for your search
     """
 
-    search, field = analyze_input(*args, **kwargs)
+    search, field = analyze_input(name, cid, smiles, conformer, silent)
 
     conformer_ids = available_conformer_search(search, field,
                                                mock_test=mock_test)
@@ -281,10 +283,11 @@ def pubchem_conformer_search(*args, mock_test=False, **kwargs):
     return conformers
 
 
-def pubchem_atoms_search(*args, **kwargs):
+def pubchem_atoms_search(name=None, cid=None, smiles=None, conformer=None,
+                         silent=False, mock_test=False):
     """
     Search PubChem for the field and search input on the argument passed in
-    returning an atoms object.Note that only one argument may be passed
+    returning an atoms object.Note that only one arugment may be passed
     in at a time.
 
     Parameters:
@@ -295,13 +298,17 @@ def pubchem_atoms_search(*args, **kwargs):
             an ASE Atoms object containing the information on the
             requested entry
     """
-    return pubchem_search(*args, **kwargs).get_atoms()
+    return pubchem_search(name=name, cid=cid, smiles=smiles,
+                          conformer=conformer, silent=silent,
+                          mock_test=mock_test).get_atoms()
 
 
-def pubchem_atoms_conformer_search(*args, **kwargs):
+def pubchem_atoms_conformer_search(name=None, cid=None, smiles=None,
+                                   conformer=None, silent=False,
+                                   mock_test=False):
     """
     Search PubChem for all the conformers of a given compound.
-    Note that only one argument may be passed in at a time.
+    Note that only one arugment may be passed in at a time.
 
     Parameters:
         see `ase.data.pubchem.pubchem_search`
@@ -311,10 +318,12 @@ def pubchem_atoms_conformer_search(*args, **kwargs):
             a list containing the atoms objects of all the conformers
             for your search
     """
-    conformers = pubchem_conformer_search(*args, **kwargs)
+    conformers = pubchem_conformer_search(name=name, cid=smiles, smiles=smiles,
+                                          conformer=conformer, silent=silent,
+                                          mock_test=mock_test)
     conformers = [conformer.get_atoms() for conformer in conformers]
     return conformers
 
 
-test_output = b'222\n  -OEChem-10071914343D\n\n  4  3  0     0  0  0  0  0  0999 V2000\n    0.0000    0.0000    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.4417    0.2906    0.8711 H   0  0  0  0  0  0  0  0  0  0  0  0\n    0.7256    0.6896   -0.1907 H   0  0  0  0  0  0  0  0  0  0  0  0\n    0.4875   -0.8701    0.2089 H   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0  0  0  0\n  1  3  1  0  0  0  0\n  1  4  1  0  0  0  0\nM  END\n> <PUBCHEM_COMPOUND_CID>\n222\n\n> <PUBCHEM_CONFORMER_RMSD>\n0.4\n\n> <PUBCHEM_CONFORMER_DIVERSEORDER>\n1\n\n> <PUBCHEM_MMFF94_PARTIAL_CHARGES>\n4\n1 -1.08\n2 0.36\n3 0.36\n4 0.36\n\n> <PUBCHEM_EFFECTIVE_ROTOR_COUNT>\n0\n\n> <PUBCHEM_PHARMACOPHORE_FEATURES>\n1\n1 1 cation\n\n> <PUBCHEM_HEAVY_ATOM_COUNT>\n1\n\n> <PUBCHEM_ATOM_DEF_STEREO_COUNT>\n0\n\n> <PUBCHEM_ATOM_UDEF_STEREO_COUNT>\n0\n\n> <PUBCHEM_BOND_DEF_STEREO_COUNT>\n0\n\n> <PUBCHEM_BOND_UDEF_STEREO_COUNT>\n0\n\n> <PUBCHEM_ISOTOPIC_ATOM_COUNT>\n0\n\n> <PUBCHEM_COMPONENT_COUNT>\n1\n\n> <PUBCHEM_CACTVS_TAUTO_COUNT>\n1\n\n> <PUBCHEM_CONFORMER_ID>\n000000DE00000001\n\n> <PUBCHEM_MMFF94_ENERGY>\n0\n\n> <PUBCHEM_FEATURE_SELFOVERLAP>\n5.074\n\n> <PUBCHEM_SHAPE_FINGERPRINT>\n260 1 18410856563934756871\n\n> <PUBCHEM_SHAPE_MULTIPOLES>\n15.6\n0.51\n0.51\n0.51\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n\n> <PUBCHEM_SHAPE_SELFOVERLAP>\n14.89\n\n> <PUBCHEM_SHAPE_VOLUME>\n15.6\n\n> <PUBCHEM_COORDINATE_TYPE>\n2\n5\n10\n\n$$$$\n'  # noqa
-test_conformer_output = b'{\n  "InformationList": {\n    "Information": [\n      {\n        "CID": 222,\n        "ConformerID": [\n          "000000DE00000001"\n        ]\n      }\n    ]\n  }\n}\n'  # noqa
+test_output = b'222\n  -OEChem-10071914343D\n\n  4  3  0     0  0  0  0  0  0999 V2000\n    0.0000    0.0000    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.4417    0.2906    0.8711 H   0  0  0  0  0  0  0  0  0  0  0  0\n    0.7256    0.6896   -0.1907 H   0  0  0  0  0  0  0  0  0  0  0  0\n    0.4875   -0.8701    0.2089 H   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0  0  0  0\n  1  3  1  0  0  0  0\n  1  4  1  0  0  0  0\nM  END\n> <PUBCHEM_COMPOUND_CID>\n222\n\n> <PUBCHEM_CONFORMER_RMSD>\n0.4\n\n> <PUBCHEM_CONFORMER_DIVERSEORDER>\n1\n\n> <PUBCHEM_MMFF94_PARTIAL_CHARGES>\n4\n1 -1.08\n2 0.36\n3 0.36\n4 0.36\n\n> <PUBCHEM_EFFECTIVE_ROTOR_COUNT>\n0\n\n> <PUBCHEM_PHARMACOPHORE_FEATURES>\n1\n1 1 cation\n\n> <PUBCHEM_HEAVY_ATOM_COUNT>\n1\n\n> <PUBCHEM_ATOM_DEF_STEREO_COUNT>\n0\n\n> <PUBCHEM_ATOM_UDEF_STEREO_COUNT>\n0\n\n> <PUBCHEM_BOND_DEF_STEREO_COUNT>\n0\n\n> <PUBCHEM_BOND_UDEF_STEREO_COUNT>\n0\n\n> <PUBCHEM_ISOTOPIC_ATOM_COUNT>\n0\n\n> <PUBCHEM_COMPONENT_COUNT>\n1\n\n> <PUBCHEM_CACTVS_TAUTO_COUNT>\n1\n\n> <PUBCHEM_CONFORMER_ID>\n000000DE00000001\n\n> <PUBCHEM_MMFF94_ENERGY>\n0\n\n> <PUBCHEM_FEATURE_SELFOVERLAP>\n5.074\n\n> <PUBCHEM_SHAPE_FINGERPRINT>\n260 1 18410856563934756871\n\n> <PUBCHEM_SHAPE_MULTIPOLES>\n15.6\n0.51\n0.51\n0.51\n0\n0\n0\n0\n0\n0\n0\n0\n0\n0\n\n> <PUBCHEM_SHAPE_SELFOVERLAP>\n14.89\n\n> <PUBCHEM_SHAPE_VOLUME>\n15.6\n\n> <PUBCHEM_COORDINATE_TYPE>\n2\n5\n10\n\n$$$$\n'
+test_conformer_output = b'{\n  "InformationList": {\n    "Information": [\n      {\n        "CID": 222,\n        "ConformerID": [\n          "000000DE00000001"\n        ]\n      }\n    ]\n  }\n}\n'

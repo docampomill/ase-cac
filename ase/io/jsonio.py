@@ -5,57 +5,35 @@ import numpy as np
 from ase.utils import reader, writer
 
 
-# Note: We are converting JSON classes to the recommended mechanisms
-# by the json module.  That means instead of classes, we will use the
-# functions default() and object_hook().
-#
-# The encoder classes are to be deprecated (but maybe not removed, if
-# widely used).
-
-
-def default(obj):
-    if hasattr(obj, 'todict'):
-        dct = obj.todict()
-
-        if not isinstance(dct, dict):
-            raise RuntimeError('todict() of {} returned object of type {} '
-                               'but should have returned dict'
-                               .format(obj, type(dct)))
-        if hasattr(obj, 'ase_objtype'):
-            # We modify the dictionary, so it is wise to take a copy.
-            dct = dct.copy()
-            dct['__ase_objtype__'] = obj.ase_objtype
-
-        return dct
-    if isinstance(obj, np.ndarray):
-        flatobj = obj.ravel()
-        if np.iscomplexobj(obj):
-            flatobj.dtype = obj.real.dtype
-        # We use str(obj.dtype) here instead of obj.dtype.name, because
-        # they are not always the same (e.g. for numpy arrays of strings).
-        # Using obj.dtype.name can break the ability to recursively decode/
-        # encode such arrays.
-        return {'__ndarray__': (obj.shape,
-                                str(obj.dtype),
-                                flatobj.tolist())}
-    if isinstance(obj, np.integer):
-        return int(obj)
-    if isinstance(obj, np.bool_):
-        return bool(obj)
-    if isinstance(obj, datetime.datetime):
-        return {'__datetime__': obj.isoformat()}
-    if isinstance(obj, complex):
-        return {'__complex__': (obj.real, obj.imag)}
-
-    raise TypeError(f'Cannot convert object of type {type(obj)} to '
-                    'dictionary for JSON')
-
-
 class MyEncoder(json.JSONEncoder):
     def default(self, obj):
-        # (Note the name "default" comes from the outer namespace, so
-        # not actually recursive)
-        return default(obj)
+        if hasattr(obj, 'todict'):
+            d = obj.todict()
+
+            if not isinstance(d, dict):
+                raise RuntimeError('todict() of {} returned object of type {} '
+                                   'but should have returned dict'
+                                   .format(obj, type(d)))
+            if hasattr(obj, 'ase_objtype'):
+                d['__ase_objtype__'] = obj.ase_objtype
+
+            return d
+        if isinstance(obj, np.ndarray):
+            flatobj = obj.ravel()
+            if np.iscomplexobj(obj):
+                flatobj.dtype = obj.real.dtype
+            return {'__ndarray__': (obj.shape,
+                                    obj.dtype.name,
+                                    flatobj.tolist())}
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, datetime.datetime):
+            return {'__datetime__': obj.isoformat()}
+        if isinstance(obj, complex):
+            return {'__complex__': (obj.real, obj.imag)}
+        return json.JSONEncoder.default(self, obj)
 
 
 encode = MyEncoder().encode
@@ -85,6 +63,7 @@ def object_hook(dct):
     return dct
 
 
+
 def create_ndarray(shape, dtype, data):
     """Create ndarray from shape, dtype and flattened data."""
     array = np.empty(shape, dtype=dtype)
@@ -101,10 +80,12 @@ def create_ase_object(objtype, dct):
     # We can formalize this later if it ever becomes necessary.
     if objtype == 'cell':
         from ase.cell import Cell
-        dct.pop('pbc', None)  # compatibility; we once had pbc
+        pbc = dct.pop('pbc')
         obj = Cell(**dct)
+        if pbc is not None:
+            obj._pbc = pbc
     elif objtype == 'bandstructure':
-        from ase.spectrum.band_structure import BandStructure
+        from ase.dft.band_structure import BandStructure
         obj = BandStructure(**dct)
     elif objtype == 'bandpath':
         from ase.dft.kpoints import BandPath
@@ -112,9 +93,6 @@ def create_ase_object(objtype, dct):
     elif objtype == 'atoms':
         from ase import Atoms
         obj = Atoms.fromdict(dct)
-    elif objtype == 'vibrationsdata':
-        from ase.vibrations import VibrationsData
-        obj = VibrationsData.fromdict(dct)
     else:
         raise ValueError('Do not know how to decode object type {} '
                          'into an actual object'.format(objtype))
@@ -126,23 +104,10 @@ mydecode = json.JSONDecoder(object_hook=object_hook).decode
 
 
 def intkey(key):
-    """Convert str to int if possible."""
     try:
         return int(key)
     except ValueError:
         return key
-
-
-def fix_int_keys_in_dicts(obj):
-    """Convert "int" keys: "1" -> 1.
-
-    The json.dump() function will convert int keys in dicts to str keys.
-    This function goes the other way.
-    """
-    if isinstance(obj, dict):
-        return {intkey(key): fix_int_keys_in_dicts(value)
-                for key, value in obj.items()}
-    return obj
 
 
 def numpyfy(obj):
@@ -150,6 +115,8 @@ def numpyfy(obj):
         if '__complex_ndarray__' in obj:
             r, i = (np.array(x) for x in obj['__complex_ndarray__'])
             return r + i * 1j
+        return dict((intkey(key), numpyfy(value))
+                    for key, value in obj.items())
     if isinstance(obj, list) and len(obj) > 0:
         try:
             a = np.array(obj)
@@ -164,7 +131,6 @@ def numpyfy(obj):
 
 def decode(txt, always_array=True):
     obj = mydecode(txt)
-    obj = fix_int_keys_in_dicts(obj)
     if always_array:
         obj = numpyfy(obj)
     return obj

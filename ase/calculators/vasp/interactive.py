@@ -1,3 +1,4 @@
+
 from subprocess import Popen, PIPE
 
 from ase.calculators.calculator import Calculator
@@ -10,7 +11,7 @@ import os
 import sys
 
 
-class VaspInteractive(GenerateVaspInput, Calculator):  # type: ignore
+class VaspInteractive(GenerateVaspInput, Calculator):
     name = "VaspInteractive"
     implemented_properties = ['energy', 'forces', 'stress']
 
@@ -24,7 +25,7 @@ class VaspInteractive(GenerateVaspInput, Calculator):  # type: ignore
 
     def __init__(self, txt="interactive.log", print_log=False, process=None,
                  command=None, path="./", **kwargs):
-
+        
         GenerateVaspInput.__init__(self)
 
         for kw, val in self.mandatory_input.items():
@@ -143,11 +144,10 @@ class VaspInteractive(GenerateVaspInput, Calculator):  # type: ignore
 
         new = read(os.path.join(self.path, 'vasprun.xml'), index=-1)
 
-        self.results = {
-            'free_energy': new.get_potential_energy(force_consistent=True),
-            'energy': new.get_potential_energy(),
-            'forces': new.get_forces()[self.resort],
-            'stress': new.get_stress()}
+        self.results = {'free_energy': new.get_potential_energy(force_consistent=True),
+                        'energy': new.get_potential_energy(),
+                        'forces': new.get_forces()[self.resort],
+                        'stress': new.get_stress()}
 
     def __del__(self):
         self.close()

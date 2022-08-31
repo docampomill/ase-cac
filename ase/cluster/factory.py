@@ -1,11 +1,10 @@
-from typing import List, Optional
-
 import numpy as np
 
 from ase.data import atomic_numbers as ref_atomic_numbers
 from ase.spacegroup import Spacegroup
 from ase.cluster.base import ClusterBase
 from ase.cluster.cluster import Cluster
+from ase.utils import basestring
 
 
 class ClusterFactory(ClusterBase):
@@ -15,10 +14,9 @@ class ClusterFactory(ClusterBase):
 
     atomic_basis = np.array([[0., 0., 0.]])
 
-    element_basis: Optional[List[int]] = None
+    element_basis = None
 
-    # Make it possible to change the class of the object returned.
-    Cluster = Cluster
+    Cluster = Cluster   # Make it possible to change the class of the object returned.
 
     def __call__(self, symbols, surfaces, layers, latticeconstant=None,
                  center=None, vacuum=0.0, debug=0):
@@ -32,8 +30,7 @@ class ClusterFactory(ClusterBase):
             if self.element_basis is None:
                 self.lattice_constant = self.get_lattice_constant()
             else:
-                raise ValueError(
-                    "A lattice constant must be specified for a compound")
+                raise ValueError("A lattice constant must be specified for a compound")
         else:
             self.lattice_constant = latticeconstant
 
@@ -66,17 +63,17 @@ class ClusterFactory(ClusterBase):
         translations = np.zeros((size.prod(), 3))
         for h in range(size[0]):
             for k in range(size[1]):
-                for l_ in range(size[2]):
-                    i = h * (size[1] * size[2]) + k * size[2] + l_
-                    translations[i] = np.dot([h, k, l_], self.lattice_basis)
+                for l in range(size[2]):
+                    i = h * (size[1] * size[2]) + k * size[2] + l
+                    translations[i] = np.dot([h, k, l], self.lattice_basis)
 
         atomic_basis = np.dot(self.atomic_basis, self.lattice_basis)
         positions = np.zeros((len(translations) * len(atomic_basis), 3))
         numbers = np.zeros(len(positions))
         n = len(atomic_basis)
         for i, trans in enumerate(translations):
-            positions[n * i:n * (i + 1)] = atomic_basis + trans
-            numbers[n * i:n * (i + 1)] = self.atomic_numbers
+            positions[n*i:n*(i+1)] = atomic_basis + trans
+            numbers[n*i:n*(i+1)] = self.atomic_numbers
 
         # Remove all atoms that is outside the defined surfaces
         for s, l in zip(self.surfaces, self.layers):
@@ -92,19 +89,27 @@ class ClusterFactory(ClusterBase):
             positions = positions[mask]
             numbers = numbers[mask]
 
-        atoms = self.Cluster(symbols=numbers, positions=positions)
+        # Fit the cell, so it only just consist the atoms
+        min = np.zeros(3)
+        max = np.zeros(3)
+        for i in range(3):
+            v = self.directions[i]
+            r = np.dot(positions, v)
+            min[i] = r.min()
+            max[i] = r.max()
 
-        atoms.cell = (1, 1, 1)  # XXX ugly hack to center around zero
-        atoms.center(about=(0, 0, 0))
-        atoms.cell[:] = 0
-        return atoms
+        cell = max - min + vacuum
+        positions = positions - min + vacuum / 2.0
+        self.center = self.center - min + vacuum / 2.0
+
+        return self.Cluster(symbols=numbers, positions=positions, cell=cell)
 
     def set_atomic_numbers(self, symbols):
         "Extract atomic number from element"
         # The types that can be elements: integers and strings
         atomic_numbers = []
         if self.element_basis is None:
-            if isinstance(symbols, str):
+            if isinstance(symbols, basestring):
                 atomic_numbers.append(ref_atomic_numbers[symbols])
             elif isinstance(symbols, int):
                 atomic_numbers.append(symbols)
@@ -125,7 +130,7 @@ class ClusterFactory(ClusterBase):
                                 " (one for each kind of lattice position")
 
             for s in symbols:
-                if isinstance(s, str):
+                if isinstance(s, basestring):
                     atomic_numbers.append(ref_atomic_numbers[s])
                 elif isinstance(s, int):
                     atomic_numbers.append(s)
@@ -159,9 +164,7 @@ class ClusterFactory(ClusterBase):
                     k[i] = np.floor(k[i])
 
             if self.debug > 1:
-                print(
-                    "Spaning %i layers in %s in lattice basis ~ %s" %
-                    (l, s, k))
+                print("Spaning %i layers in %s in lattice basis ~ %s" % (l, s, k))
 
             max[k > max] = k[k > max]
             min[k < min] = k[k < min]
@@ -171,9 +174,8 @@ class ClusterFactory(ClusterBase):
 
     def set_surfaces_layers(self, surfaces, layers):
         if len(surfaces) != len(layers):
-            raise ValueError(
-                "Improper size of surface and layer arrays: %i != %i"
-                % (len(surfaces), len(layers)))
+            raise ValueError("Improper size of surface and layer arrays: %i != %i"
+                             % (len(surfaces), len(layers)))
 
         sg = Spacegroup(self.spacegroup)
         surfaces = np.array(surfaces)
@@ -193,8 +195,7 @@ class ClusterFactory(ClusterBase):
                 # If the equivalent surface (es) is not in the surface list,
                 # then append it.
                 if not np.equal(es, surfaces_full).all(axis=1).any():
-                    surfaces_full = np.append(
-                        surfaces_full, es.reshape(1, 3), axis=0)
+                    surfaces_full = np.append(surfaces_full, es.reshape(1, 3), axis=0)
                     layers_full = np.append(layers_full, l)
 
         self.surfaces = surfaces_full.copy()
@@ -210,22 +211,20 @@ class ClusterFactory(ClusterBase):
                              cross(basis[0], basis[1])])
 
 # Helping functions
-
-
 def cross(a, b):
     """The cross product of two vectors."""
-    return np.array([a[1] * b[2] - b[1] * a[2],
-                     a[2] * b[0] - b[2] * a[0],
-                     a[0] * b[1] - b[0] * a[1]])
+    return np.array([a[1]*b[2] - b[1]*a[2],
+                     a[2]*b[0] - b[2]*a[0],
+                     a[0]*b[1] - b[0]*a[1]])
 
 
-def GCD(a, b):
+def GCD(a,b):
     """Greatest Common Divisor of a and b."""
-    # print "--"
+    #print "--"
     while a != 0:
-        # print a,b,">",
-        a, b = b % a, a
-        # print a,b
+        #print a,b,">",
+        a,b = b%a,a
+        #print a,b
     return b
 
 

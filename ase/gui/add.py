@@ -1,3 +1,5 @@
+# encoding: utf-8
+
 import os
 import numpy as np
 
@@ -9,12 +11,15 @@ from ase.data import atomic_numbers, chemical_symbols
 
 current_selection_string = _('(selection)')
 
-
 class AddAtoms:
     def __init__(self, gui):
         self.gui = gui
-        win = self.win = ui.Window(_('Add atoms'), wmtype='utility')
+        win = self.win = ui.Window(_('Add atoms'))
         win.add(_('Specify chemical symbol, formula, or filename.'))
+
+        def set_molecule(value):
+            self.entry.value = value
+            self.focus()
 
         def choose_file():
             chooser = ui.ASEFileChooser(self.win.win)
@@ -22,7 +27,7 @@ class AddAtoms:
             if filename is None:  # No file selected
                 return
 
-            self.combobox.value = filename
+            self.entry.value = filename
 
             # Load the file immediately, so we can warn now in case of error
             self.readfile(filename, format=chooser.format)
@@ -30,23 +35,21 @@ class AddAtoms:
         if self.gui.images.selected.any():
             default = current_selection_string
         else:
-            default = 'H2'
+            default = ''
+        self.entry = ui.Entry(default, callback=self.add)
+        win.add([_('Add:'), self.entry,
+                 ui.Button(_('File ...'), callback=choose_file)])
 
         self._filename = None
         self._atoms_from_file = None
 
         from ase.collections import g2
-        labels = list(sorted(name for name in g2.names
-                             if len(g2[name]) > 1))
+        labels = list(sorted(g2.names))
         values = labels
 
-        combobox = ui.ComboBox(labels, values)
-        win.add([_('Add:'), combobox,
-                 ui.Button(_('File ...'), callback=choose_file)])
-        combobox.widget.bind('<Return>', lambda e: self.add())
-
-        combobox.value = default
-        self.combobox = combobox
+        box = ui.ComboBox(labels, values, callback=set_molecule)
+        win.add([_('Get molecule:'), box])
+        box.value = 'H2'
 
         spinners = [ui.SpinBox(0.0, -1e3, 1e3, 0.1, rounding=2, width=3)
                     for __ in range(3)]
@@ -79,8 +82,7 @@ class AddAtoms:
         return atoms
 
     def get_atoms(self):
-        # Get the text, whether it's a combobox item or not
-        val = self.combobox.widget.get()
+        val = self.entry.value
 
         if val == current_selection_string:
             selection = self.gui.images.selected.copy()
@@ -119,7 +121,7 @@ class AddAtoms:
         return addcoords
 
     def focus(self):
-        self.combobox.widget.focus_set()
+        self.entry.entry.focus_set()
 
     def add(self):
         newatoms = self.get_atoms()
@@ -134,6 +136,7 @@ class AddAtoms:
         newatoms.positions += newcenter - previous_center
 
         atoms = self.gui.atoms
+
         if len(atoms) and self.picky.value:
             from ase.geometry import get_distances
             disps, dists = get_distances(atoms.positions,
@@ -146,4 +149,15 @@ class AddAtoms:
                                'uncheck the check positions option.'))
                 return
 
-        self.gui.add_atoms_and_select(newatoms)
+        atoms += newatoms
+
+        if len(atoms) > self.gui.images.maxnatoms:
+            self.gui.images.initialize(list(self.gui.images),
+                                       self.gui.images.filenames)
+
+        self.gui.images.selected[:] = False
+
+        # 'selected' array may be longer than current atoms
+        self.gui.images.selected[len(atoms) - len(newatoms):len(atoms)] = True
+        self.gui.set_frame()
+        self.gui.draw()

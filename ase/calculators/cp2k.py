@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """This module defines an ASE interface to CP2K.
 
 https://www.cp2k.org/
@@ -12,8 +14,7 @@ from subprocess import Popen, PIPE
 import numpy as np
 import ase.io
 from ase.units import Rydberg
-from ase.calculators.calculator import (Calculator, all_changes, Parameters,
-                                        CalculatorSetupError)
+from ase.calculators.calculator import Calculator, all_changes, Parameters
 
 
 class CP2K(Calculator):
@@ -47,6 +48,7 @@ class CP2K(Calculator):
     ``cp2k_shell``. To run a parallelized simulation use something like this:
 
     >>> CP2K.command="env OMP_NUM_THREADS=2 mpiexec -np 4 cp2k_shell.psmp"
+
 
     Arguments:
 
@@ -89,28 +91,6 @@ class CP2K(Calculator):
         gives access to all features of CP2K.
         Note, that most keywords accept ``None`` to disable the generation
         of the corresponding input section.
-
-        This input template is important for advanced CP2K
-        inputs, but is also needed for e.g. controlling the Brillouin
-        zone integration. The example below illustrates some common
-        options::
-
-           >>> inp = '''&FORCE_EVAL
-           >>>    &DFT
-           >>>      &KPOINTS
-           >>>        SCHEME MONKHORST-PACK 12 12 8
-           >>>      &END KPOINTS
-           >>>      &SCF
-           >>>        ADDED_MOS 10
-           >>>        &SMEAR
-           >>>          METHOD FERMI_DIRAC
-           >>>          ELECTRONIC_TEMPERATURE [K] 500.0
-           >>>        &END SMEAR
-           >>>      &END SCF
-           >>>    &END DFT
-           >>>  &END FORCE_EVAL
-           >>>  '''
-
     max_scf: int
         Maximum number of SCF iteration to be performed for
         one optimization. Default is ``50``.
@@ -141,12 +121,13 @@ class CP2K(Calculator):
     print_level: str
         PRINT_LEVEL of global output.
         Possible options are:
-        DEBUG Everything is written out, useful for debugging purposes only
-        HIGH Lots of output
-        LOW Little output
-        MEDIUM Quite some output
-        SILENT Almost no output
+        DEBUG Everything is written out, useful for debugging purposes only 
+        HIGH Lots of output 
+        LOW Little output 
+        MEDIUM Quite some output 
+        SILENT Almost no output 
         Default is 'LOW'
+        
     """
 
     implemented_properties = ['energy', 'free_energy', 'forces', 'stress']
@@ -169,8 +150,7 @@ class CP2K(Calculator):
         xc='LDA',
         print_level='LOW')
 
-    def __init__(self, restart=None,
-                 ignore_bad_restart_file=Calculator._deprecated,
+    def __init__(self, restart=None, ignore_bad_restart_file=False,
                  label='cp2k', atoms=None, command=None,
                  debug=False, **kwargs):
         """Construct CP2K-calculator object."""
@@ -200,7 +180,13 @@ class CP2K(Calculator):
         self._shell = Cp2kShell(self.command, self._debug)
 
         if restart is not None:
-            self.read(restart)
+            try:
+                self.read(restart)
+            except:
+                if ignore_bad_restart_file:
+                    self.reset()
+                else:
+                    raise
 
     def __del__(self):
         """Release force_env and terminate cp2k_shell child process"""
@@ -210,13 +196,6 @@ class CP2K(Calculator):
 
     def set(self, **kwargs):
         """Set parameters like set(key1=value1, key2=value2, ...)."""
-        msg = '"%s" is not a known keyword for the CP2K calculator. ' \
-              'To access all features of CP2K by means of an input ' \
-              'template, consider using the "inp" keyword instead.'
-        for key in kwargs:
-            if key not in self.default_parameters:
-                raise CalculatorSetupError(msg % key)
-
         changed_parameters = Calculator.set(self, **kwargs)
         if changed_parameters:
             self.reset()
@@ -224,7 +203,7 @@ class CP2K(Calculator):
     def write(self, label):
         'Write atoms, parameters and calculated results into restart files.'
         if self._debug:
-            print("Writing restart to: ", label)
+            print("Writting restart to: ", label)
         self.atoms.write(label + '_restart.traj')
         self.parameters.write(label + '_params.ase')
         from ase.io.jsonio import write_json
@@ -275,7 +254,7 @@ class CP2K(Calculator):
                 self._shell.send('%.18e %.18e %.18e' % tuple(pos))
             self._shell.send('*END')
             max_change = float(self._shell.recv())
-            assert max_change >= 0  # sanity check
+            assert max_change >= 0 # sanity check
             self._shell.expect('* READY')
 
         self._shell.send('EVAL_EF %d' % self._force_env_id)
@@ -289,7 +268,7 @@ class CP2K(Calculator):
         forces = np.zeros(shape=(n_atoms, 3))
         self._shell.send('GET_F %d' % self._force_env_id)
         nvals = int(self._shell.recv())
-        assert nvals == 3 * n_atoms  # sanity check
+        assert nvals == 3 * n_atoms # sanity check
         for i in range(n_atoms):
             line = self._shell.recv()
             forces[i, :] = [float(x) for x in line.split()]
@@ -334,8 +313,9 @@ class CP2K(Calculator):
             print('Writting to file: ' + fn)
             print(content)
         if self._shell.version < 2.0:
-            with open(fn, 'w') as fd:
-                fd.write(content)
+            f = open(fn, 'w')
+            f.write(content)
+            f.close()
         else:
             lines = content.split('\n')
             if self._shell.version < 2.1:
@@ -392,13 +372,10 @@ class CP2K(Calculator):
                 xc_sec = root.get_subsection('FORCE_EVAL/DFT/XC/XC_FUNCTIONAL')
                 # libxc input section changed over time
                 if functional.startswith("XC_") and self._shell.version < 3.0:
-                    legacy_libxc += " " + functional  # handled later
-                elif functional.startswith("XC_") and self._shell.version < 5.0:
+                    legacy_libxc += " " + functional # handled later
+                elif functional.startswith("XC_"):
                     s = InputSection(name='LIBXC')
                     s.keywords.append('FUNCTIONAL ' + functional)
-                    xc_sec.subsections.append(s)
-                elif functional.startswith("XC_"):
-                    s = InputSection(name=functional[3:])
                     xc_sec.subsections.append(s)
                 else:
                     s = InputSection(name=functional.upper())
@@ -462,7 +439,7 @@ class CP2K(Calculator):
         return '\n'.join(output_lines)
 
 
-class Cp2kShell:
+class Cp2kShell(object):
     """Wrapper for CP2K-shell child-process"""
 
     def __init__(self, command, debug):
@@ -470,6 +447,7 @@ class Cp2kShell:
 
         self.isready = False
         self.version = 1.0  # assume oldest possible version until verified
+        self._child = None
         self._debug = debug
 
         # launch cp2k_shell child process
@@ -502,13 +480,11 @@ class Cp2kShell:
         """Terminate cp2k_shell child process"""
         if self.isready:
             self.send('EXIT')
-            self._child.communicate()
             rtncode = self._child.wait()
             assert rtncode == 0  # child process exited properly?
         else:
             warn("CP2K-shell not ready, sending SIGTERM.", RuntimeWarning)
             self._child.terminate()
-            self._child.communicate()
         self._child = None
         self.version = None
         self.isready = False
@@ -538,10 +514,8 @@ class Cp2kShell:
         received = self.recv()
         assert received == line
 
-
-class InputSection:
+class InputSection(object):
     """Represents a section of a CP2K input file"""
-
     def __init__(self, name, params=None):
         self.name = name.upper()
         self.params = params

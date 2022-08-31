@@ -1,18 +1,27 @@
 import os
-import subprocess
 from warnings import warn
-from pathlib import Path
-
+import subprocess
 import numpy as np
-from ase.calculators.calculator import (BaseCalculator, FileIOCalculator,
-                                        Calculator)
-from ase.io import write
+
+from ase.calculators.calculator import (Calculator,
+                                        FileIOCalculator,
+                                        all_changes,
+                                        PropertyNotImplementedError)
+from ase.units import Bohr, Hartree
+from ase.io.xyz import write_xyz
 from ase.io.vasp import write_vasp
 from ase.parallel import world
-from ase.units import Bohr, Hartree
 
 
-def dftd3_defaults():
+class DFTD3(FileIOCalculator):
+    """Grimme DFT-D3 calculator"""
+
+    name = 'DFTD3'
+    command = 'dftd3'
+    dftd3_implemented_properties = ['energy', 'forces', 'stress']
+
+    damping_methods = ['zero', 'bj', 'zerom', 'bjm']
+
     default_parameters = {'xc': None,  # PBE if no custom damping parameters
                           'grad': True,  # calculate forces/stress
                           'abc': False,  # ATM 3-body contribution
@@ -29,129 +38,66 @@ def dftd3_defaults():
                           'a1': None,
                           'a2': None,
                           'beta': None}
-    return default_parameters
 
-
-class DFTD3(BaseCalculator):
-    """Grimme DFT-D3 calculator"""
+    dftd3_flags = ('grad', 'pbc', 'abc', 'old', 'tz')
 
     def __init__(self,
                  label='ase_dftd3',  # Label for dftd3 output files
                  command=None,  # Command for running dftd3
                  dft=None,  # DFT calculator
+                 atoms=None,
                  comm=world,
                  **kwargs):
 
+        self.dft = None
+        FileIOCalculator.__init__(self, restart=None,
+                                  ignore_bad_restart_file=False,
+                                  label=label,
+                                  atoms=atoms,
+                                  command=command,
+                                  dft=dft,
+                                  **kwargs)
+
+        self.comm = comm
+
+    def set(self, **kwargs):
+        changed_parameters = {}
         # Convert from 'func' keyword to 'xc'. Internally, we only store
         # 'xc', but 'func' is also allowed since it is consistent with the
         # CLI dftd3 interface.
-        func = kwargs.pop('func', None)
-        if func is not None:
-            if kwargs.get('xc') is not None:
+        if kwargs.get('func'):
+            if kwargs.get('xc') and kwargs['func'] != kwargs['xc']:
                 raise RuntimeError('Both "func" and "xc" were provided! '
                                    'Please provide at most one of these '
                                    'two keywords. The preferred keyword '
                                    'is "xc"; "func" is allowed for '
                                    'consistency with the CLI dftd3 '
                                    'interface.')
-            kwargs['xc'] = func
+            if kwargs['func'] != self.parameters['xc']:
+                changed_parameters['xc'] = kwargs['func']
+            self.parameters['xc'] = kwargs['func']
+
+        # dftd3 only implements energy, forces, and stresses (for periodic
+        # systems). But, if a DFT calculator is attached, and that calculator
+        # implements more properties, we will expose those properties too.
+        if 'dft' in kwargs:
+            dft = kwargs.pop('dft')
+            if dft is not self.dft:
+                changed_parameters['dft'] = dft
+            if dft is None:
+                self.implemented_properties = self.dftd3_implemented_properties
+            else:
+                self.implemented_properties = dft.implemented_properties
+            self.dft = dft
 
         # If the user did not supply an XC functional, but did attach a
         # DFT calculator that has XC set, then we will use that. Note that
         # DFTD3's spelling convention is different from most, so in general
         # you will have to explicitly set XC for both the DFT calculator and
         # for DFTD3 (and DFTD3's will likely be spelled differently...)
-        if dft is not None and kwargs.get('xc') is None:
-            dft_xc = dft.parameters.get('xc')
-            if dft_xc is not None:
-                kwargs['xc'] = dft_xc
-
-        dftd3 = PureDFTD3(label=label, command=command, comm=comm, **kwargs)
-
-        # dftd3 only implements energy, forces, and stresses (for periodic
-        # systems). But, if a DFT calculator is attached, and that calculator
-        # implements more properties, we expose those properties.
-        # dftd3 contributions for those properties will be zero.
-        if dft is None:
-            self.implemented_properties = list(dftd3.dftd3_properties)
-        else:
-            self.implemented_properties = list(dft.implemented_properties)
-
-        # Should our arguments be "parameters" (passed to superclass)
-        # or are they not really "parameters"?
-        #
-        # That's not really well defined.  Let's not do anything then.
-        super().__init__()
-
-        self.dftd3 = dftd3
-        self.dft = dft
-
-    def todict(self):
-        return {}
-
-    def calculate(self, atoms, properties, system_changes):
-        common_props = set(self.dftd3.dftd3_properties) & set(properties)
-        dftd3_results = self._get_properties(atoms, common_props, self.dftd3)
-
-        if self.dft is None:
-            results = dftd3_results
-        else:
-            dft_results = self._get_properties(atoms, properties, self.dft)
-            results = dict(dft_results)
-            for name in set(results) & set(dftd3_results):
-                assert np.shape(results[name]) == np.shape(dftd3_results[name])
-                results[name] += dftd3_results[name]
-
-            # Although DFTD3 may have calculated quantities not provided
-            # by the calculator (e.g. stress), it would be wrong to
-            # return those!  Return only what corresponds to the DFT calc.
-            assert set(results) == set(dft_results)
-        self.results = results
-
-    def _get_properties(self, atoms, properties, calc):
-        # We want any and all properties that the calculator
-        # normally produces.  So we intend to rob the calc.results
-        # dictionary instead of only getting the requested properties.
-
-        import copy
-        for name in properties:
-            calc.get_property(name, atoms)
-            assert name in calc.results
-
-        # XXX maybe use get_properties() when that makes sense.
-        results = copy.deepcopy(calc.results)
-        assert set(properties) <= set(results)
-        return results
-
-
-class PureDFTD3(FileIOCalculator):
-    """DFTD3 calculator without corresponding DFT contribution.
-
-    This class is an implementation detail."""
-
-    name = 'puredftd3'
-    command = 'dftd3'
-
-    dftd3_properties = {'energy', 'free_energy', 'forces', 'stress'}
-    implemented_properties = list(dftd3_properties)
-    default_parameters = dftd3_defaults()
-    damping_methods = {'zero', 'bj', 'zerom', 'bjm'}
-
-    def __init__(self,
-                 *,
-                 label='ase_dftd3',  # Label for dftd3 output files
-                 command=None,  # Command for running dftd3
-                 comm=world,
-                 **kwargs):
-
-        super().__init__(label=label,
-                         command=command,
-                         **kwargs)
-
-        self.comm = comm
-
-    def set(self, **kwargs):
-        changed_parameters = {}
+        if self.parameters['xc'] is None and self.dft is not None:
+            if self.dft.parameters.get('xc'):
+                self.parameters['xc'] = self.dft.parameters['xc']
 
         # Check for unknown arguments. Don't raise an error, just let the
         # user know that we don't understand what they're asking for.
@@ -163,14 +109,14 @@ class PureDFTD3(FileIOCalculator):
         changed_parameters.update(FileIOCalculator.set(self, **kwargs))
 
         # Ensure damping method is valid (zero, bj, zerom, bjm).
-        damping = self.parameters['damping']
-        if damping is not None:
-            damping = damping.lower()
-        if damping not in self.damping_methods:
-            raise ValueError(f'Unknown damping method {damping}!')
+        if self.parameters['damping'] is not None:
+            self.parameters['damping'] = self.parameters['damping'].lower()
+        if self.parameters['damping'] not in self.damping_methods:
+            raise ValueError('Unknown damping method {}!'
+                             ''.format(self.parameters['damping']))
 
         # d2 only is valid with 'zero' damping
-        elif self.parameters['old'] and damping != 'zero':
+        elif self.parameters['old'] and self.parameters['damping'] != 'zero':
             raise ValueError('Only zero-damping can be used with the D2 '
                              'dispersion correction method!')
 
@@ -189,10 +135,10 @@ class PureDFTD3(FileIOCalculator):
         # stresses) can be bypassed. This will greatly speed up calculations
         # in dense 3D-periodic systems with three-body corrections. But, we
         # can no longer say that we implement forces and stresses.
-        # if not self.parameters['grad']:
-        #    for val in ['forces', 'stress']:
-        #        if val in self.implemented_properties:
-        #            self.implemented_properties.remove(val)
+        if not self.parameters['grad']:
+            for val in ['forces', 'stress']:
+                if val in self.implemented_properties:
+                    self.implemented_properties.remove(val)
 
         # Check to see if we're using custom damping parameters.
         zero_damppars = {'s6', 'sr6', 's8', 'sr8', 'alpha6'}
@@ -201,7 +147,7 @@ class PureDFTD3(FileIOCalculator):
         all_damppars = zero_damppars | bj_damppars | zerom_damppars
 
         self.custom_damp = False
-
+        damping = self.parameters['damping']
         damppars = set(kwargs) & all_damppars
         if damppars:
             self.custom_damp = True
@@ -249,7 +195,8 @@ class PureDFTD3(FileIOCalculator):
             self.results.clear()
         return changed_parameters
 
-    def calculate(self, atoms, properties, system_changes):
+    def calculate(self, atoms=None, properties=['energy'],
+                  system_changes=all_changes):
         # We don't call FileIOCalculator.calculate here, because that method
         # calls subprocess.call(..., shell=True), which we don't want to do.
         # So, we reproduce some content from that method here.
@@ -264,20 +211,16 @@ class PureDFTD3(FileIOCalculator):
         # Write XYZ or POSCAR file and .dftd3par.local file if we are using
         # custom damping parameters.
         self.write_input(self.atoms, properties, system_changes)
-        # command = self._generate_command()
-
-        inputs = DFTD3Inputs(command=self.command, prefix=self.label,
-                             atoms=self.atoms, parameters=self.parameters)
-        command = inputs.get_argv(custom_damp=self.custom_damp)
+        command = self._generate_command()
 
         # Finally, call dftd3 and parse results.
         # DFTD3 does not run in parallel
         # so we only need it to run on 1 core
         errorcode = 0
         if self.comm.rank == 0:
-            with open(self.label + '.out', 'w') as fd:
+            with open(self.label + '.out', 'w') as f:
                 errorcode = subprocess.call(command,
-                                            cwd=self.directory, stdout=fd)
+                                            cwd=self.directory, stdout=f)
 
         errorcode = self.comm.sum(errorcode)
 
@@ -295,246 +238,185 @@ class PureDFTD3(FileIOCalculator):
         # dimensions. If the atoms object is periodic in only 1 or 2
         # dimensions, then treat it as a fully 3D periodic system, but warn
         # the user.
-
-        if self.custom_damp:
-            damppars = _get_damppars(self.parameters)
-        else:
-            damppars = None
-
-        pbc = any(atoms.pbc)
-        if pbc and not all(atoms.pbc):
-            warn('WARNING! dftd3 can only calculate the dispersion energy '
-                 'of non-periodic or 3D-periodic systems. We will treat '
-                 'this system as 3D-periodic!')
+        pbc = False
+        if any(atoms.pbc):
+            if not all(atoms.pbc):
+                warn('WARNING! dftd3 can only calculate the dispersion energy '
+                     'of non-periodic or 3D-periodic systems. We will treat '
+                     'this system as 3D-periodic!')
+            pbc = True
 
         if self.comm.rank == 0:
-            self._actually_write_input(
-                directory=Path(self.directory), atoms=atoms,
-                properties=properties, prefix=self.label,
-                damppars=damppars, pbc=pbc)
-
-    def _actually_write_input(self, directory, prefix, atoms, properties,
-                              damppars, pbc):
-        if pbc:
-            fname = directory / '{}.POSCAR'.format(prefix)
-            # We sort the atoms so that the atomtypes list becomes as
-            # short as possible.  The dftd3 program can only handle 10
-            # atomtypes
-            write_vasp(fname, atoms, sort=True)
-        else:
-            fname = directory / '{}.xyz'.format(prefix)
-            write(fname, atoms, format='xyz', parallel=False)
+            if pbc:
+                fname = os.path.join(self.directory,
+                                     '{}.POSCAR'.format(self.label))
+                write_vasp(fname, atoms)
+            else:
+                fname = os.path.join(
+                    self.directory, '{}.xyz'.format(self.label))
+                write_xyz(fname, atoms, plain=True)
 
         # Generate custom damping parameters file. This is kind of ugly, but
         # I don't know of a better way of doing this.
-        if damppars is not None:
-            damp_fname = directory / '.dftd3par.local'
-            with open(damp_fname, 'w') as fd:
-                fd.write(' '.join(damppars))
+        if self.custom_damp:
+            damppars = []
+            # s6 is always first
+            damppars.append(str(float(self.parameters['s6'])))
+            # sr6 is the second value for zero{,m} damping, a1 for bj{,m}
+            if self.parameters['damping'] in ['zero', 'zerom']:
+                damppars.append(str(float(self.parameters['sr6'])))
+            elif self.parameters['damping'] in ['bj', 'bjm']:
+                damppars.append(str(float(self.parameters['a1'])))
+            # s8 is always third
+            damppars.append(str(float(self.parameters['s8'])))
+            # sr8 is fourth for zero, a2 for bj{,m}, beta for zerom
+            if self.parameters['damping'] == 'zero':
+                damppars.append(str(float(self.parameters['sr8'])))
+            elif self.parameters['damping'] in ['bj', 'bjm']:
+                damppars.append(str(float(self.parameters['a2'])))
+            elif self.parameters['damping'] == 'zerom':
+                damppars.append(str(float(self.parameters['beta'])))
+            # alpha6 is always fifth
+            damppars.append(str(int(self.parameters['alpha6'])))
+            # last is the version number
+            if self.parameters['old']:
+                damppars.append('2')
+            elif self.parameters['damping'] == 'zero':
+                damppars.append('3')
+            elif self.parameters['damping'] == 'bj':
+                damppars.append('4')
+            elif self.parameters['damping'] == 'zerom':
+                damppars.append('5')
+            elif self.parameters['damping'] == 'bjm':
+                damppars.append('6')
 
-    def _outname(self):
-        return Path(self.directory) / f'{self.label}.out'
-
-    def _read_and_broadcast_results(self):
-        from ase.parallel import broadcast
-        if self.comm.rank == 0:
-            output = DFTD3Output(directory=self.directory,
-                                 stdout_path=self._outname())
-            dct = output.read(atoms=self.atoms,
-                              read_forces=bool(self.parameters['grad']))
-        else:
-            dct = None
-
-        dct = broadcast(dct, root=0, comm=self.comm)
-        return dct
+            damp_fname = os.path.join(self.directory, '.dftd3par.local')
+            if self.comm.rank == 0:
+                with open(damp_fname, 'w') as f:
+                    f.write(' '.join(damppars))
 
     def read_results(self):
-        results = self._read_and_broadcast_results()
-        self.results = results
+        # parse the energy
+        outname = os.path.join(self.directory, self.label + '.out')
+        energy = 0.0
+        if self.comm.rank == 0:
+            with open(outname, 'r') as f:
+                for line in f:
+                    if line.startswith(' program stopped'):
+                        if 'functional name unknown' in line:
+                            message = 'Unknown DFTD3 functional name "{}". ' \
+                                      'Please check the dftd3.f source file ' \
+                                      'for the list of known functionals ' \
+                                      'and their spelling.' \
+                                      ''.format(self.parameters['xc'])
+                        else:
+                            message = 'dftd3 failed! Please check the {} ' \
+                                      'output file and report any errors ' \
+                                      'to the ASE developers.' \
+                                      ''.format(outname)
+                        raise RuntimeError(message)
 
+                    if line.startswith(' Edisp'):
+                        # line looks something like this:
+                        #
+                        #     Edisp /kcal,au,ev: xxx xxx xxx
+                        #
+                        parts = line.split()
+                        assert parts[1][0] == '/'
+                        index = 2 + parts[1][1:-1].split(',').index('au')
+                        e_dftd3 = float(parts[index]) * Hartree
+                        energy = e_dftd3
+                        break
+                else:
+                    raise RuntimeError('Could not parse energy from dftd3 '
+                                       'output, see file {}'.format(outname))
 
-class DFTD3Inputs:
-    dftd3_flags = {'grad', 'pbc', 'abc', 'old', 'tz'}
+        self.results['energy'] = self.comm.sum(energy)
+        self.results['free_energy'] = self.results['energy']
 
-    def __init__(self, command, prefix, atoms, parameters):
-        self.command = command
-        self.prefix = prefix
-        self.atoms = atoms
-        self.parameters = parameters
+        # FIXME: Calculator.get_potential_energy() simply inspects
+        # self.results for the free energy rather than calling
+        # Calculator.get_property('free_energy'). For example, GPAW does
+        # not actually present free_energy as an implemented property, even
+        # though it does calculate it. So, we are going to add in the DFT
+        # free energy to our own results if it is present in the attached
+        # calculator. TODO: Fix the Calculator interface!!!
+        if self.dft is not None:
+            try:
+                efree = self.dft.get_potential_energy(
+                    force_consistent=True)
+                self.results['free_energy'] += efree
+            except PropertyNotImplementedError:
+                pass
 
-    @property
-    def pbc(self):
-        return any(self.atoms.pbc)
+        if self.parameters['grad']:
+            # parse the forces
+            forces = np.zeros((len(self.atoms), 3))
+            forcename = os.path.join(self.directory, 'dftd3_gradient')
+            if self.comm.rank == 0:
+                with open(forcename, 'r') as f:
+                    for i, line in enumerate(f):
+                        forces[i] = np.array([float(x) for x in line.split()])
+                forces *= -Hartree / Bohr
+            self.comm.broadcast(forces, 0)
+            self.results['forces'] = forces
 
-    @property
-    def inputformat(self):
-        if self.pbc:
-            return 'POSCAR'
+            if any(self.atoms.pbc):
+                # parse the stress tensor
+                stress = np.zeros((3, 3))
+                stressname = os.path.join(self.directory, 'dftd3_cellgradient')
+                if self.comm.rank == 0:
+                    with open(stressname, 'r') as f:
+                        for i, line in enumerate(f):
+                            for j, x in enumerate(line.split()):
+                                stress[i, j] = float(x)
+                    stress *= Hartree / Bohr / self.atoms.get_volume()
+                    stress = np.dot(stress, self.atoms.cell.T)
+                self.comm.broadcast(stress, 0)
+                self.results['stress'] = stress.flat[[0, 4, 8, 5, 2, 1]]
+
+    def get_property(self, name, atoms=None, allow_calculation=True):
+        dft_result = None
+        if self.dft is not None:
+            dft_result = self.dft.get_property(name, atoms, allow_calculation)
+
+        dftd3_result = FileIOCalculator.get_property(self, name, atoms,
+                                                     allow_calculation)
+
+        if dft_result is None and dftd3_result is None:
+            return None
+        elif dft_result is None:
+            return dftd3_result
+        elif dftd3_result is None:
+            return dft_result
         else:
-            return 'xyz'
+            return dft_result + dftd3_result
 
-    def get_argv(self, custom_damp):
-        argv = self.command.split()
+    def _generate_command(self):
+        command = self.command.split()
 
-        argv.append(f'{self.prefix}.{self.inputformat}')
+        if any(self.atoms.pbc):
+            command.append(self.label + '.POSCAR')
+        else:
+            command.append(self.label + '.xyz')
 
-        if not custom_damp:
+        if not self.custom_damp:
             xc = self.parameters.get('xc')
             if xc is None:
                 xc = 'pbe'
-            argv += ['-func', xc.lower()]
+            command += ['-func', xc.lower()]
 
         for arg in self.dftd3_flags:
             if self.parameters.get(arg):
-                argv.append('-' + arg)
+                command.append('-' + arg)
 
-        if self.pbc:
-            argv.append('-pbc')
+        if any(self.atoms.pbc):
+            command.append('-pbc')
 
-        argv += ['-cnthr', str(self.parameters['cnthr'] / Bohr)]
-        argv += ['-cutoff', str(self.parameters['cutoff'] / Bohr)]
+        command += ['-cnthr', str(self.parameters['cnthr'] / Bohr)]
+        command += ['-cutoff', str(self.parameters['cutoff'] / Bohr)]
 
         if not self.parameters['old']:
-            argv.append('-' + self.parameters['damping'])
+            command.append('-' + self.parameters['damping'])
 
-        return argv
-
-
-class DFTD3Output:
-    def __init__(self, directory, stdout_path):
-        self.directory = Path(directory)
-        self.stdout_path = Path(stdout_path)
-
-    def read(self, *, atoms, read_forces):
-        results = {}
-
-        energy = self.read_energy()
-        results['energy'] = energy
-        results['free_energy'] = energy
-
-        if read_forces:
-            results['forces'] = self.read_forces(atoms)
-
-        if any(atoms.pbc):
-            results['stress'] = self.read_stress(atoms.cell)
-
-        return results
-
-    def read_forces(self, atoms):
-        forcename = self.directory / 'dftd3_gradient'
-        with open(forcename) as fd:
-            forces = self.parse_forces(fd)
-
-        assert len(forces) == len(atoms)
-
-        forces *= -Hartree / Bohr
-        # XXXX ordering!
-        if any(atoms.pbc):
-            # This seems to be due to vasp file sorting.
-            # If that sorting rule changes, we will get garbled
-            # forces!
-            ind = np.argsort(atoms.symbols)
-            forces[ind] = forces.copy()
-        return forces
-
-    def read_stress(self, cell):
-        volume = cell.volume
-        assert volume > 0
-
-        stress = self.read_cellgradient()
-        stress *= Hartree / Bohr / volume
-        stress = stress.T @ cell
-        return stress.flat[[0, 4, 8, 5, 2, 1]]
-
-    def read_cellgradient(self):
-        with (self.directory / 'dftd3_cellgradient').open() as fd:
-            return self.parse_cellgradient(fd)
-
-    def read_energy(self) -> float:
-        with self.stdout_path.open() as fd:
-            return self.parse_energy(fd, self.stdout_path)
-
-    def parse_energy(self, fd, outname):
-        for line in fd:
-            if line.startswith(' program stopped'):
-                if 'functional name unknown' in line:
-                    message = ('Unknown DFTD3 functional name. '
-                               'Please check the dftd3.f source file '
-                               'for the list of known functionals '
-                               'and their spelling.')
-                else:
-                    message = ('dftd3 failed! Please check the {} '
-                               'output file and report any errors '
-                               'to the ASE developers.'
-                               ''.format(outname))
-                raise RuntimeError(message)
-
-            if line.startswith(' Edisp'):
-                # line looks something like this:
-                #
-                #     Edisp /kcal,au,ev: xxx xxx xxx
-                #
-                parts = line.split()
-                assert parts[1][0] == '/'
-                index = 2 + parts[1][1:-1].split(',').index('au')
-                e_dftd3 = float(parts[index]) * Hartree
-                return e_dftd3
-
-        raise RuntimeError('Could not parse energy from dftd3 '
-                           'output, see file {}'.format(outname))
-
-    def parse_forces(self, fd):
-        forces = []
-        for i, line in enumerate(fd):
-            forces.append(line.split())
-        return np.array(forces, dtype=float)
-
-    def parse_cellgradient(self, fd):
-        stress = np.zeros((3, 3))
-        for i, line in enumerate(fd):
-            for j, x in enumerate(line.split()):
-                stress[i, j] = float(x)
-        # Check if all stress elements are present?
-        # Check if file is longer?
-        return stress
-
-
-def _get_damppars(par):
-    damping = par['damping']
-
-    damppars = []
-
-    # s6 is always first
-    damppars.append(str(float(par['s6'])))
-
-    # sr6 is the second value for zero{,m} damping, a1 for bj{,m}
-    if damping in ['zero', 'zerom']:
-        damppars.append(str(float(par['sr6'])))
-    elif damping in ['bj', 'bjm']:
-        damppars.append(str(float(par['a1'])))
-
-    # s8 is always third
-    damppars.append(str(float(par['s8'])))
-
-    # sr8 is fourth for zero, a2 for bj{,m}, beta for zerom
-    if damping == 'zero':
-        damppars.append(str(float(par['sr8'])))
-    elif damping in ['bj', 'bjm']:
-        damppars.append(str(float(par['a2'])))
-    elif damping == 'zerom':
-        damppars.append(str(float(par['beta'])))
-    # alpha6 is always fifth
-    damppars.append(str(int(par['alpha6'])))
-
-    # last is the version number
-    if par['old']:
-        damppars.append('2')
-    elif damping == 'zero':
-        damppars.append('3')
-    elif damping == 'bj':
-        damppars.append('4')
-    elif damping == 'zerom':
-        damppars.append('5')
-    elif damping == 'bjm':
-        damppars.append('6')
-    return damppars
+        return command

@@ -1,5 +1,8 @@
+# -*- coding: utf-8 -*-
+
 """Infrared intensities"""
 
+import os.path as op
 from math import sqrt
 from sys import stdout
 
@@ -8,6 +11,7 @@ import numpy as np
 import ase.units as units
 from ase.parallel import parprint, paropen
 from ase.vibrations import Vibrations
+from ase.utils import basestring, pickleload
 
 
 class Infrared(Vibrations):
@@ -74,7 +78,7 @@ class Infrared(Vibrations):
     ...             idipol=4,       # calculate the total dipole moment
     ...             dipol=water.get_center_of_mass(scaled=True),
     ...             ldipol=True)
-    >>> water.calc = calc
+    >>> water.set_calculator(calc)
     >>> ir = Infrared(water)
     >>> ir.run()
     >>> ir.summary()
@@ -128,14 +132,13 @@ class Infrared(Vibrations):
     >>> calc.set_fdf('LatticeConstant', 1.000000 * Ang)
     >>> calc.set_fdf('WriteCoorXmol',       'T')
 
-    >>> bud.calc = calc
+    >>> bud.set_calculator(calc)
 
     >>> ir = Infrared(bud)
     >>> ir.run()
     >>> ir.summary()
 
     """
-
     def __init__(self, atoms, indices=None, name='ir', delta=0.01,
                  nfree=2, directions=None):
         Vibrations.__init__(self, atoms, indices=indices, name=name,
@@ -148,19 +151,33 @@ class Infrared(Vibrations):
         else:
             self.directions = np.asarray(directions)
         self.ir = True
+        self.ram = False
 
     def read(self, method='standard', direction='central'):
         self.method = method.lower()
         self.direction = direction.lower()
         assert self.method in ['standard', 'frederiksen']
 
+        def load(fname, combined_data=None):
+            if combined_data is not None:
+                try:
+                    return combined_data[op.basename(fname)]
+                except KeyError:
+                    return combined_data[fname]  # Old version
+            return pickleload(open(fname, 'rb'))
+
         if direction != 'central':
             raise NotImplementedError(
                 'Only central difference is implemented at the moment.')
 
-        disp = self._eq_disp()
-        forces_zero = disp.forces()
-        dipole_zero = disp.dipole()
+        if op.isfile(self.name + '.all.pckl'):
+            # Open the combined pickle-file
+            combined_data = load(self.name + '.all.pckl')
+        else:
+            combined_data = None
+        # Get "static" dipole moment and forces
+        name = '%s.eq.pckl' % self.name
+        [forces_zero, dipole_zero] = load(name, combined_data)
         self.dipole_zero = (sum(dipole_zero**2)**0.5) / units.Debye
         self.force_zero = max([sum((forces_zero[j])**2)**0.5
                                for j in self.indices])
@@ -169,57 +186,48 @@ class Infrared(Vibrations):
         H = np.empty((ndof, ndof))
         dpdx = np.empty((ndof, 3))
         r = 0
-
-        for a, i in self._iter_ai():
-            disp_minus = self._disp(a, i, -1)
-            disp_plus = self._disp(a, i, 1)
-
-            fminus = disp_minus.forces()
-            dminus = disp_minus.dipole()
-
-            fplus = disp_plus.forces()
-            dplus = disp_plus.dipole()
-
-            if self.nfree == 4:
-                disp_mm = self._disp(a, i, -2)
-                disp_pp = self._disp(a, i, 2)
-                fminusminus = disp_mm.forces()
-                dminusminus = disp_mm.dipole()
-
-                fplusplus = disp_pp.forces()
-                dplusplus = disp_pp.dipole()
-            if self.method == 'frederiksen':
-                fminus[a] += -fminus.sum(0)
-                fplus[a] += -fplus.sum(0)
+        for a in self.indices:
+            for i in 'xyz':
+                name = '%s.%d%s' % (self.name, a, i)
+                [fminus, dminus] = load(name + '-.pckl', combined_data)
+                [fplus, dplus] = load(name + '+.pckl', combined_data)
                 if self.nfree == 4:
-                    fminusminus[a] += -fminus.sum(0)
-                    fplusplus[a] += -fplus.sum(0)
-            if self.nfree == 2:
-                H[r] = (fminus - fplus)[self.indices].ravel() / 2.0
-                dpdx[r] = (dminus - dplus)
-            if self.nfree == 4:
-                H[r] = (-fminusminus + 8 * fminus - 8 * fplus +
-                        fplusplus)[self.indices].ravel() / 12.0
-                dpdx[r] = (-dplusplus + 8 * dplus - 8 * dminus +
-                           dminusminus) / 6.0
-            H[r] /= 2 * self.delta
-            dpdx[r] /= 2 * self.delta
-            for n in range(3):
-                if n not in self.directions:
-                    dpdx[r][n] = 0
-                    dpdx[r][n] = 0
-            r += 1
+                    [fminusminus, dminusminus] = load(
+                        name + '--.pckl', combined_data)
+                    [fplusplus, dplusplus] = load(
+                        name + '++.pckl', combined_data)
+                if self.method == 'frederiksen':
+                    fminus[a] += -fminus.sum(0)
+                    fplus[a] += -fplus.sum(0)
+                    if self.nfree == 4:
+                        fminusminus[a] += -fminus.sum(0)
+                        fplusplus[a] += -fplus.sum(0)
+                if self.nfree == 2:
+                    H[r] = (fminus - fplus)[self.indices].ravel() / 2.0
+                    dpdx[r] = (dminus - dplus)
+                if self.nfree == 4:
+                    H[r] = (-fminusminus + 8 * fminus - 8 * fplus +
+                            fplusplus)[self.indices].ravel() / 12.0
+                    dpdx[r] = (-dplusplus + 8 * dplus - 8 * dminus +
+                               dminusminus) / 6.0
+                H[r] /= 2 * self.delta
+                dpdx[r] /= 2 * self.delta
+                for n in range(3):
+                    if n not in self.directions:
+                        dpdx[r][n] = 0
+                        dpdx[r][n] = 0
+                r += 1
         # Calculate eigenfrequencies and eigenvectors
-        masses = self.atoms.get_masses()
+        m = self.atoms.get_masses()
         H += H.copy().T
         self.H = H
-
-        self.im = np.repeat(masses[self.indices]**-0.5, 3)
+        m = self.atoms.get_masses()
+        self.im = np.repeat(m[self.indices]**-0.5, 3)
         omega2, modes = np.linalg.eigh(self.im[:, None] * H * self.im)
         self.modes = modes.T.copy()
 
         # Calculate intensities
-        dpdq = np.array([dpdx[j] / sqrt(masses[self.indices[j // 3]] *
+        dpdq = np.array([dpdx[j] / sqrt(m[self.indices[j // 3]] *
                                         units._amu / units._me)
                          for j in range(ndof)])
         dpdQ = np.dot(dpdq.T, modes)
@@ -252,7 +260,7 @@ class Infrared(Vibrations):
         elif intensity_unit == 'km/mol':
             iu_string = '   ' + iu_string
             iu_format = ' %7.1f'
-        if isinstance(log, str):
+        if isinstance(log, basestring):
             log = paropen(log, 'a')
 
         parprint('-------------------------------------', file=log)
@@ -317,12 +325,17 @@ class Infrared(Vibrations):
         outdata.T[0] = energies
         outdata.T[1] = spectrum
         outdata.T[2] = spectrum2
-        with open(out, 'w') as fd:
-            fd.write('# %s folded, width=%g cm^-1\n' % (type.title(), width))
-            iu, iu_string = self.intensity_prefactor(intensity_unit)
-            if normalize:
-                iu_string = 'cm ' + iu_string
-            fd.write('# [cm^-1] %14s\n' % ('[' + iu_string + ']'))
-            for row in outdata:
-                fd.write('%.3f  %15.5e  %15.5e \n' %
-                         (row[0], iu * row[1], row[2]))
+        fd = open(out, 'w')
+        fd.write('# %s folded, width=%g cm^-1\n' % (type.title(), width))
+        iu, iu_string = self.intensity_prefactor(intensity_unit)
+        if normalize:
+            iu_string = 'cm ' + iu_string
+        fd.write('# [cm^-1] %14s\n' % ('[' + iu_string + ']'))
+        for row in outdata:
+            fd.write('%.3f  %15.5e  %15.5e \n' %
+                     (row[0], iu * row[1], row[2]))
+        fd.close()
+        # np.savetxt(out, outdata, fmt='%.3f  %15.5e  %15.5e')
+
+
+InfraRed = Infrared  # old name

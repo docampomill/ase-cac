@@ -1,26 +1,24 @@
 """Base module for all operators that create offspring."""
 import numpy as np
+from random import random
 
 from ase import Atoms
 
 
-class OffspringCreator:
+class OffspringCreator(object):
     """Base class for all procreation operators
 
     Parameters:
 
     verbose: Be verbose and print some stuff
 
-    rng: Random number generator
-        By default numpy.random.
     """
 
-    def __init__(self, verbose=False, num_muts=1, rng=np.random):
+    def __init__(self, verbose=False, num_muts=1):
         self.descriptor = 'OffspringCreator'
         self.verbose = verbose
         self.min_inputs = 0
         self.num_muts = num_muts
-        self.rng = rng
 
     def get_min_inputs(self):
         """Returns the number of inputs required for a mutation,
@@ -57,7 +55,7 @@ class OffspringCreator:
         return indi
 
 
-class OperationSelector:
+class OperationSelector(object):
     """Class used to randomly select a procreation operation
     from a list of operations.
 
@@ -68,19 +66,15 @@ class OperationSelector:
         does not need to be 1.
 
     oplist: The list of operations to select from.
-
-    rng: Random number generator
-        By default numpy.random.
     """
 
-    def __init__(self, probabilities, oplist, rng=np.random):
+    def __init__(self, probabilities, oplist):
         assert len(probabilities) == len(oplist)
         self.oplist = oplist
         self.rho = np.cumsum(probabilities)
-        self.rng = rng
 
     def __get_index__(self):
-        v = self.rng.random() * self.rho[-1]
+        v = random() * self.rho[-1]
         for i in range(len(self.rho)):
             if self.rho[i] > v:
                 return i

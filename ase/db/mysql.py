@@ -12,7 +12,7 @@ import ase.io.jsonio
 import json
 
 
-class Connection:
+class Connection(object):
     """
     Wrapper for the MySQL connection
 
@@ -49,11 +49,8 @@ class Connection:
     def close(self):
         self.con.close()
 
-    def rollback(self):
-        self.con.rollback()
 
-
-class MySQLCursor:
+class MySQLCursor(object):
     """
     Wrapper for the MySQL cursor. The most important task performed by this
     class is to translate SQLite queries to MySQL. Translation is needed

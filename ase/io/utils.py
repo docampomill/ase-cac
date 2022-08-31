@@ -6,18 +6,17 @@ from ase.io.formats import string2index
 from ase.utils import rotate
 from ase.data import covalent_radii, atomic_numbers
 from ase.data.colors import jmol_colors
-
+from ase.utils import basestring
 
 class PlottingVariables:
     # removed writer - self
     def __init__(self, atoms, rotation='', show_unit_cell=2,
-                 radii=None, bbox=None, colors=None, scale=20,
-                 maxwidth=500, extra_offset=(0., 0.)):
+                              radii=None, bbox=None, colors=None, scale=20,
+                              maxwidth=500, extra_offset=(0., 0.)):
         self.numbers = atoms.get_atomic_numbers()
         self.colors = colors
         if colors is None:
-            ncolors = len(jmol_colors)
-            self.colors = jmol_colors[self.numbers.clip(max=ncolors - 1)]
+            self.colors = jmol_colors[self.numbers]
 
         if radii is None:
             radii = covalent_radii[self.numbers]
@@ -28,7 +27,7 @@ class PlottingVariables:
 
         natoms = len(atoms)
 
-        if isinstance(rotation, str):
+        if isinstance(rotation, basestring):
             rotation = rotate(rotation)
 
         cell = atoms.get_cell()
@@ -61,7 +60,7 @@ class PlottingVariables:
         for n in range(nlines):
             d = D[T[n]]
             if ((((R - L[n] - d)**2).sum(1) < r2) &
-                    (((R - L[n] + d)**2).sum(1) < r2)).any():
+                (((R - L[n] + d)**2).sum(1) < r2)).any():
                 T[n] = -1
 
         positions = np.dot(positions, rotation)
@@ -111,7 +110,6 @@ class PlottingVariables:
         self.cell_vertices = cell_vertices
         self.natoms = natoms
         self.d = 2 * scale * radii
-        self.constraints = atoms.constraints
 
         # extension for partial occupancies
         self.frac_occ = False
@@ -157,8 +155,13 @@ def cell_to_lines(writer, cell):
 
 
 def make_patch_list(writer):
-    from matplotlib.path import Path
-    from matplotlib.patches import Circle, PathPatch, Wedge
+    try:
+        from matplotlib.path import Path
+    except ImportError:
+        Path = None
+        from matplotlib.patches import Circle, Polygon, Wedge
+    else:
+        from matplotlib.patches import Circle, PathPatch, Wedge
 
     indices = writer.positions[:, 2].argsort()
     patch_list = []
@@ -167,7 +170,7 @@ def make_patch_list(writer):
         if a < writer.natoms:
             r = writer.d[a] / 2
             if writer.frac_occ:
-                site_occ = writer.occs[str(writer.tags[a])]
+                site_occ = writer.occs[writer.tags[a]]
                 # first an empty circle if a site is not fully occupied
                 if (np.sum([v for v in site_occ.values()])) < 1.0:
                     # fill with white
@@ -178,9 +181,7 @@ def make_patch_list(writer):
 
                 start = 0
                 # start with the dominant species
-                for sym, occ in sorted(site_occ.items(),
-                                       key=lambda x: x[1],
-                                       reverse=True):
+                for sym, occ in sorted(site_occ.items(), key=lambda x: x[1], reverse=True):
                     if np.round(occ, decimals=4) == 1.0:
                         patch = Circle(xy, r, facecolor=writer.colors[a],
                                        edgecolor='black')
@@ -188,16 +189,15 @@ def make_patch_list(writer):
                     else:
                         # jmol colors for the moment
                         extent = 360. * occ
-                        patch = Wedge(
-                            xy, r, start, start + extent,
-                            facecolor=jmol_colors[atomic_numbers[sym]],
-                            edgecolor='black')
+                        patch = Wedge(xy, r, start, start+extent,
+                                      facecolor=jmol_colors[atomic_numbers[sym]],
+                                      edgecolor='black')
                         patch_list.append(patch)
                         start += extent
 
             else:
                 if ((xy[1] + r > 0) and (xy[1] - r < writer.h) and
-                        (xy[0] + r > 0) and (xy[0] - r < writer.w)):
+                    (xy[0] + r > 0) and (xy[0] - r < writer.w)):
                     patch = Circle(xy, r, facecolor=writer.colors[a],
                                    edgecolor='black')
                     patch_list.append(patch)
@@ -206,7 +206,10 @@ def make_patch_list(writer):
             c = writer.T[a]
             if c != -1:
                 hxy = writer.D[c]
-                patch = PathPatch(Path((xy + hxy, xy - hxy)))
+                if Path is None:
+                    patch = Polygon((xy + hxy, xy - hxy))
+                else:
+                    patch = PathPatch(Path((xy + hxy, xy - hxy)))
                 patch_list.append(patch)
     return patch_list
 
@@ -228,18 +231,17 @@ class ImageIterator:
     Assumes ``ichunks`` is in iterator, which returns ``ImageChunk``
     type objects. See extxyz.py:iread_xyz as an example.
     """
-
     def __init__(self, ichunks):
         self.ichunks = ichunks
 
     def __call__(self, fd, index=None, **kwargs):
-        if isinstance(index, str):
+        if isinstance(index, basestring):
             index = string2index(index)
 
         if index is None or index == ':':
             index = slice(None, None, None)
 
-        if not isinstance(index, (slice, str)):
+        if not isinstance(index, (slice, basestring)):
             index = slice(index, (index + 1) or None)
 
         for chunk in self._getslice(fd, index):
@@ -265,57 +267,3 @@ class ImageIterator:
             indices_tuple = indices.indices(nchunks)
             iterator = islice(self.ichunks(fd), *indices_tuple)
         return iterator
-
-
-def verify_cell_for_export(cell, check_orthorhombric=True):
-    """Function to verify if the cell size is defined and if the cell is
-
-    Parameters:
-
-    cell: cell object
-        cell to be checked.
-
-    check_orthorhombric: bool
-        If True, check if the cell is orthorhombric, raise an ``ValueError`` if
-        the cell is orthorhombric. If False, doesn't check if the cell is
-        orthorhombric.
-
-    Raise a ``ValueError`` if the cell if not suitable for export to mustem xtl
-    file or prismatic/computem xyz format:
-        - if cell is not orthorhombic (only when check_orthorhombric=True)
-        - if cell size is not defined
-    """
-
-    if check_orthorhombric and not cell.orthorhombic:
-        raise ValueError('To export to this format, the cell needs to be '
-                         'orthorhombic.')
-    if cell.rank < 3:
-        raise ValueError('To export to this format, the cell size needs '
-                         'to be set: current cell is {}.'.format(cell))
-
-
-def verify_dictionary(atoms, dictionary, dictionary_name):
-    """
-    Verify a dictionary have a key for each symbol present in the atoms object.
-
-    Parameters:
-
-    dictionary: dict
-        Dictionary to be checked.
-
-
-    dictionary_name: dict
-        Name of the dictionary to be displayed in the error message.
-
-    cell: cell object
-        cell to be checked.
-
-
-    Raise a ``ValueError`` if the key doesn't match the atoms present in the
-    cell.
-    """
-    # Check if we have enough key
-    for key in set(atoms.symbols):
-        if key not in dictionary:
-            raise ValueError('Missing the {} key in the `{}` dictionary.'
-                             ''.format(key, dictionary_name))

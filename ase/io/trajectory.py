@@ -11,8 +11,6 @@ from ase.atoms import Atoms
 from ase.io.jsonio import encode, decode
 from ase.io.pickletrajectory import PickleTrajectory
 from ase.parallel import world
-from ase.utils import tokenize_version
-
 
 __all__ = ['Trajectory', 'PickleTrajectory']
 
@@ -53,7 +51,6 @@ def Trajectory(filename, mode='r', atoms=None, properties=None, master=None):
 
 class TrajectoryWriter:
     """Writes Atoms objects to a .traj file."""
-
     def __init__(self, filename, mode='w', atoms=None, properties=None,
                  extra=[], master=None):
         """A Trajectory writer, in write or append mode.
@@ -110,8 +107,7 @@ class TrajectoryWriter:
         if self.master:
             self.backend = ulm.open(filename, mode, tag='ASE-Trajectory')
             if len(self.backend) > 0 and mode == 'a':
-                with Trajectory(filename) as traj:
-                    atoms = traj[0]
+                atoms = Trajectory(filename)[0]
                 self.header_data = get_header_data(atoms)
         else:
             self.backend = ulm.DummyWriter()
@@ -156,7 +152,7 @@ class TrajectoryWriter:
 
         write_atoms(b, atoms, write_header=write_header)
 
-        calc = atoms.calc
+        calc = atoms.get_calculator()
 
         if calc is None and len(kwargs) > 0:
             calc = SinglePointCalculator(atoms)
@@ -183,7 +179,6 @@ class TrajectoryWriter:
                                                   allow_calculation=False)
                         except (PropertyNotImplementedError, KeyError):
                             # KeyError is needed for Jacapo.
-                            # XXX We can perhaps remove this.
                             x = None
                 if x is not None:
                     if prop in ['stress', 'dipole']:
@@ -213,7 +208,6 @@ class TrajectoryWriter:
 
 class TrajectoryReader:
     """Reads Atoms objects from a .traj file."""
-
     def __init__(self, filename):
         """A Trajectory in read mode.
 
@@ -282,7 +276,7 @@ class TrajectoryReader:
 
             if 'parameters' in c:
                 calc.parameters.update(c.parameters)
-            atoms.calc = calc
+            atoms.set_calculator(calc)
 
         return atoms
 
@@ -343,11 +337,13 @@ def read_atoms(backend,
         try:
             return read_atoms(backend, header, traj, False)
         except Exception as ex:
-            if (traj is not None and tokenize_version(__version__) <
-                    tokenize_version(traj.ase_version)):
-                msg = ('You are trying to read a trajectory file written '
-                       f'by ASE-{traj.ase_version} from ASE-{__version__}. '
-                       'It might help to update your ASE')
+            from distutils.version import LooseVersion
+            if LooseVersion(__version__) < traj.ase_version:
+                msg = ('You are trying to read a trajectory file written ' +
+                       'with ASE-{v1} from ASE-{v2}. ' +
+                       'It might help to update your ASE').format(
+                    v1=traj.ase_version,
+                    v2=__version__)
                 raise VersionTooOldError(msg) from ex
             else:
                 raise
@@ -428,7 +424,7 @@ class OldCalculatorWrapper:
     def get_property(self, prop, atoms, allow_calculation=True):
         try:
             if (not allow_calculation and
-                    self.calc.calculation_required(atoms, [prop])):
+                self.calc.calculation_required(atoms, [prop])):
                 return None
         except AttributeError:
             pass

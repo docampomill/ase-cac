@@ -138,7 +138,6 @@ def limit(max_=None):
 
     return decorator
 
-
 @limit(max_=max_value)
 def _eval(node):
     """Evaluate a mathematical expression string parsed by ast"""
@@ -162,10 +161,7 @@ def _eval(node):
         elif node.id.lower() == "tau":
             return math.pi * 2.0
         else:
-            raise TypeError(
-                "Found a str in the expression, either param_dct/the "
-                "expression has a mistake in the parameter names or "
-                "attempting to parse non-mathematical code")
+            raise TypeError("Found a str in the expression, either param_dct/the expression has a mistake in the parameter names or attempting to parse non-mathematical code")
     else:
         raise TypeError(node)
 
@@ -188,5 +184,6 @@ def eval_expression(expression, param_dct=dict()):
 
     for key, val in param_dct.items():
         expression_rep = expression_rep.replace(key, str(val))
+
 
     return _eval(ast.parse(expression_rep, mode="eval").body)

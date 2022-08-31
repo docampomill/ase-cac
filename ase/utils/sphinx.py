@@ -4,16 +4,12 @@ import warnings
 from os.path import join
 from stat import ST_MTIME
 import re
-import runpy
 
 from docutils import nodes
 from docutils.parsers.rst.roles import set_classes
 
-from subprocess import check_call, DEVNULL, CalledProcessError
-from pathlib import Path
-
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('Agg', warn=False)
 
 
 def mol_role(role, rawtext, text, lineno, inliner, options={}, content=[]):
@@ -50,15 +46,6 @@ def git_role_tmpl(urlroot,
             text = text[1:]
         if '?' in name:
             name = name[:name.index('?')]
-    # Check if the link is broken
-    is_tag = text.startswith('..')  # Tags are like :git:`3.19.1 <../3.19.1>`
-    path = os.path.join('..', text)
-    do_exists = os.path.exists(path)
-    if not (is_tag or do_exists):
-        msg = 'Broken link: {}: Non-existing path: {}'.format(rawtext, path)
-        msg = inliner.reporter.error(msg, line=lineno)
-        prb = inliner.problematic(rawtext, rawtext, msg)
-        return [prb], [msg]
     ref = urlroot + text
     set_classes(options)
     node = nodes.reference(rawtext, name, refuri=ref,
@@ -76,8 +63,7 @@ def creates():
         for filename in filenames:
             if filename.endswith('.py'):
                 path = join(dirpath, filename)
-                with open(path) as fd:
-                    lines = fd.readlines()
+                lines = open(path).readlines()
                 if len(lines) == 0:
                     continue
                 if 'coding: utf-8' in lines[0]:
@@ -94,29 +80,24 @@ def creates():
 
 
 def create_png_files(raise_exceptions=False):
-    from ase.utils import workdir
-    try:
-        check_call(['povray', '-h'], stderr=DEVNULL)
-    except (FileNotFoundError, CalledProcessError):
+    errcode = os.system('povray -h 2> /dev/null')
+    if errcode:
         warnings.warn('No POVRAY!')
         # Replace write_pov with write_png:
         from ase.io import pov
         from ase.io.png import write_png
 
-        def write_pov(filename, atoms,
-                      povray_settings={}, isosurface_data=None,
-                      **generic_projection_settings):
-
-            write_png(Path(filename).with_suffix('.png'), atoms,
-                      **generic_projection_settings)
-
-            class DummyRenderer:
-                def render(self):
-                    pass
-
-            return DummyRenderer()
+        def write_pov(filename, atoms, run_povray=False, **parameters):
+            p = {}
+            for key in ['rotation', 'show_unit_cell', 'radii',
+                        'bbox', 'colors', 'scale']:
+                if key in parameters:
+                    p[key] = parameters[key]
+            write_png(filename[:-3] + 'png', atoms, **p)
 
         pov.write_pov = write_pov
+
+    olddir = os.getcwd()
 
     for dir, pyname, outnames in creates():
         path = join(dir, pyname)
@@ -134,18 +115,20 @@ def create_png_files(raise_exceptions=False):
                     break
         if run:
             print('running:', path)
-            with workdir(dir):
-                import matplotlib.pyplot as plt
-                plt.figure()
-                try:
-                    runpy.run_path(pyname)
-                except KeyboardInterrupt:
-                    return
-                except Exception:
-                    if raise_exceptions:
-                        raise
-                    else:
-                        traceback.print_exc()
+            os.chdir(dir)
+            import matplotlib.pyplot as plt
+            plt.figure()
+            try:
+                exec(compile(open(pyname).read(), pyname, 'exec'), {})
+            except KeyboardInterrupt:
+                return
+            except Exception:
+                if raise_exceptions:
+                    raise
+                else:
+                    traceback.print_exc()
+            finally:
+                os.chdir(olddir)
 
             for n in plt.get_fignums():
                 plt.close(n)

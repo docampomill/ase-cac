@@ -6,7 +6,7 @@ from subprocess import Popen, PIPE
 import time
 
 
-class PBSQueueRun:
+class PBSQueueRun(object):
 
     """ Class for communicating with the commonly used PBS queing system
          at a computer cluster.
@@ -31,7 +31,6 @@ class PBSQueueRun:
        qsub_command: The name of the qsub command (default qsub).
        qstat_command: The name of the qstat command (default qstat).
     """
-
     def __init__(self, data_connection, tmp_folder, job_prefix,
                  n_simul, job_template_generator,
                  qsub_command='qsub', qstat_command='qstat',
@@ -59,9 +58,9 @@ class PBSQueueRun:
                                           a.info['confid'])
         write(fname, a)
         job_name = '{0}_{1}'.format(self.job_prefix, a.info['confid'])
-        fd = open('tmp_job_file.job', 'w')
-        fd.write(self.job_template_generator(job_name, fname))
-        fd.close()
+        f = open('tmp_job_file.job', 'w')
+        f.write(self.job_template_generator(job_name, fname))
+        f.close()
         os.system('{0} tmp_job_file.job'.format(self.qsub_command))
 
     def enough_jobs_running(self):
@@ -80,8 +79,8 @@ class PBSQueueRun:
         fout = p.stdout
         lines = fout.readlines()
         n_running = 0
-        for line in lines:
-            if line.find(self.job_prefix) != -1:
+        for l in lines:
+            if l.find(self.job_prefix) != -1:
                 n_running += 1
         return n_running
 

@@ -16,10 +16,9 @@ default_executables = {'abinit': ['abinit'],
                        'dftb': ['dftb+'],
                        'elk': ['elk', 'elk-lapw'],
                        'espresso': ['pw.x'],
-                       'gamess_us': ['rungms'],
                        'gromacs': ['gmx', 'gmx_d', 'gmx_mpi', 'gmx_mpi_d'],
                        'lammpsrun': ['lammps', 'lmp', 'lmp_mpi', 'lmp_serial'],
-                       'mopac': ['mopac', 'run_mopac7'],  # run_mopac7: debian
+                       'mopac': ['mopac', 'run_mopac7'], # run_mopac7: debian
                        'nwchem': ['nwchem'],
                        'octopus': ['octopus'],
                        'openmx': ['openmx'],
@@ -30,7 +29,6 @@ default_executables = {'abinit': ['abinit'],
 python_modules = {'gpaw': 'gpaw',
                   'asap': 'asap3',
                   'lammpslib': 'lammps'}
-
 
 def get_executable_env_var(name):
     return 'ASE_{}_COMMAND'.format(name.upper())

@@ -112,29 +112,29 @@ def read_jsv(f):
     return atoms
 
 
-def write_jsv(fd, atoms):
+def write_jsv(f, atoms):
     """Writes JSV file."""
-    fd.write('asymmetric_unit_cell\n')
+    f.write('asymmetric_unit_cell\n')
 
-    fd.write('[cell]')
+    f.write('[cell]')
     for v in cell_to_cellpar(atoms.cell):
-        fd.write('  %g' % v)
-    fd.write('\n')
+        f.write('  %g' % v)
+    f.write('\n')
 
-    fd.write('[natom]  %d\n' % len(atoms))
-    fd.write('[nbond]  0\n')  # FIXME
-    fd.write('[npoly]  0\n')  # FIXME
+    f.write('[natom]  %d\n' % len(atoms))
+    f.write('[nbond]  0\n')  # FIXME
+    f.write('[npoly]  0\n')  # FIXME
 
     if 'spacegroup' in atoms.info:
         sg = Spacegroup(atoms.info['spacegroup'])
-        fd.write('[space_group]  %d %d\n' % (sg.no, sg.setting))
+        f.write('[space_group]  %d %d\n' % (sg.no, sg.setting))
     else:
-        fd.write('[space_group]  1  1\n')
+        f.write('[space_group]  1  1\n')
 
-    fd.write('[title] %s\n' % atoms.info.get('title', 'untitled'))
+    f.write('[title] %s\n' % atoms.info.get('title', 'untitled'))
 
-    fd.write('\n')
-    fd.write('[atoms]\n')
+    f.write('\n')
+    f.write('[atoms]\n')
     if 'labels' in atoms.info:
         labels = atoms.info['labels']
     else:
@@ -142,16 +142,15 @@ def write_jsv(fd, atoms):
                   enumerate(atoms.get_chemical_symbols())]
     numbers = atoms.get_atomic_numbers()
     scaled = atoms.get_scaled_positions()
-    for label, n, p in zip(labels, numbers, scaled):
-        fd.write('%-4s  %2d  %9.6f  %9.6f  %9.6f\n'
-                 % (label, n, p[0], p[1], p[2]))
+    for l, n, p in zip(labels, numbers, scaled):
+        f.write('%-4s  %2d  %9.6f  %9.6f  %9.6f\n' % (l, n, p[0], p[1], p[2]))
 
-    fd.write('Label  AtomicNumber  x y z (repeat natom times)\n')
+    f.write('Label  AtomicNumber  x y z (repeat natom times)\n')
 
-    fd.write('\n')
-    fd.write('[bonds]\n')
+    f.write('\n')
+    f.write('[bonds]\n')
 
-    fd.write('\n')
-    fd.write('[poly]\n')
+    f.write('\n')
+    f.write('[poly]\n')
 
-    fd.write('\n')
+    f.write('\n')

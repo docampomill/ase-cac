@@ -1,9 +1,7 @@
 from ase.calculators.calculator import PropertyNotImplementedError
 
-
 class Calculator:
     "Deprecated!!!!"
-
     def __init__(self):
         return
 
@@ -12,7 +10,7 @@ class Calculator:
 
     def get_atoms(self):
         atoms = self.atoms.copy()
-        atoms.calc = self
+        atoms.set_calculator(self)
         return atoms
 
     def get_name(self):

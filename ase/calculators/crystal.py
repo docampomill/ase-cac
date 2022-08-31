@@ -39,7 +39,6 @@ import numpy as np
 import os
 from ase.calculators.calculator import FileIOCalculator
 
-
 class CRYSTAL(FileIOCalculator):
     """ A crystal calculator with ase-FileIOCalculator nomenclature
     """
@@ -47,8 +46,7 @@ class CRYSTAL(FileIOCalculator):
     implemented_properties = ['energy', 'forces', 'stress', 'charges',
                               'dipole']
 
-    def __init__(self, restart=None,
-                 ignore_bad_restart_file=FileIOCalculator._deprecated,
+    def __init__(self, restart=None, ignore_bad_restart_file=False,
                  label='cry', atoms=None, crys_pcc=False, **kwargs):
         """Construct a crystal calculator.
 
@@ -84,10 +82,7 @@ class CRYSTAL(FileIOCalculator):
         """
 
         # write BLOCK 1 (only SP with gradients)
-        with open(filename, 'wt', encoding='latin-1') as outfile:
-            self._write_crystal_in(outfile)
-
-    def _write_crystal_in(self, outfile):
+        outfile = open(filename, 'wt', encoding='latin-1')
         outfile.write('Single point + Gradient crystal calculation \n')
         outfile.write('EXTERNAL \n')
         outfile.write('NEIGHPRT \n')
@@ -101,8 +96,8 @@ class CRYSTAL(FileIOCalculator):
         p = self.parameters
         if p.basis == 'custom':
             outfile.write('END \n')
-            with open(os.path.join(self.directory, 'basis')) as basisfile:
-                basis_ = basisfile.readlines()
+            basisfile = open(os.path.join(self.directory, 'basis'))
+            basis_ = basisfile.readlines()
             for line in basis_:
                 outfile.write(line)
             outfile.write('99 0 \n')
@@ -131,7 +126,7 @@ class CRYSTAL(FileIOCalculator):
             if isinstance(p.xc, str):
                 xc = {'LDA': 'EXCHANGE\nLDA\nCORRELAT\nVWN',
                       'PBE': 'PBEXC'}.get(p.xc, p.xc)
-                outfile.write(xc.upper() + '\n')
+                outfile.write(xc.upper()+'\n')
         # Custom xc functional are given by a tuple of string
             else:
                 x, c = p.xc
@@ -202,7 +197,7 @@ class CRYSTAL(FileIOCalculator):
                 raise ValueError('Shifted Monkhorst-Pack not allowed.')
             outfile.write('SHRINK  \n')
             # isp is by default 1, 2 is suggested for metals.
-            outfile.write('0 ' + str(p.isp * max(self.kpts)) + ' \n')
+            outfile.write('0 ' + str(p.isp*max(self.kpts)) + ' \n')
             if ispbc[2]:
                 outfile.write(str(self.kpts[0])
                               + ' ' + str(self.kpts[1])
@@ -220,6 +215,8 @@ class CRYSTAL(FileIOCalculator):
         # also on the charges
         outfile.write('GRADCAL \n')
         outfile.write('END \n')
+
+        outfile.close()
 
     def write_input(self, atoms, properties=None, system_changes=None):
         FileIOCalculator.write_input(
@@ -271,7 +268,7 @@ class CRYSTAL(FileIOCalculator):
             e_coul, f_coul = self.pcpot.coulomb_corrections
 
         energy = float(self.lines[index_energy].split()[pos_en]) * Hartree
-        energy -= e_coul  # e_coul already in eV.
+        energy -= e_coul # e_coul already in eV.
 
         self.results['energy'] = energy
         # Force line indexes
@@ -283,13 +280,13 @@ class CRYSTAL(FileIOCalculator):
                 break
         else:
             raise RuntimeError('Problem in reading forces')
-        for j in range(index_force_begin, index_force_begin + len(self.atoms)):
+        for j in range(index_force_begin, index_force_begin+len(self.atoms)):
             word = self.lines[j].split()
             # If GHOST atoms give problems, have a close look at this
             if len(word) == 5:
-                gradients.append([float(word[k + 2]) for k in range(0, 3)])
+                gradients.append([float(word[k+2]) for k in range(0, 3)])
             elif len(word) == 4:
-                gradients.append([float(word[k + 1]) for k in range(0, 3)])
+                gradients.append([float(word[k+1]) for k in range(0, 3)])
             else:
                 raise RuntimeError('Problem in reading forces')
 
@@ -340,7 +337,7 @@ class CRYSTAL(FileIOCalculator):
         charges = np.array(qm_charges)
         self.results['charges'] = charges
 
-        # Read dipole moment.
+        ### Read dipole moment.
         dipole = np.zeros([1, 3])
         for n, line in enumerate(self.lines):
             if 'DIPOLE MOMENT ALONG' in line:
@@ -350,6 +347,7 @@ class CRYSTAL(FileIOCalculator):
                 break
         # debye to e*Ang
         self.results['dipole'] = dipole * 0.2081943482534
+
 
     def embed(self, mmcharges=None, directory='./'):
         """Embed atoms in point-charges (mmcharges)
@@ -375,7 +373,7 @@ class PointChargePotential:
     def set_charges(self, mmcharges):
         self.mmcharges = mmcharges
 
-    def write_mmcharges(self, filename):
+    def write_mmcharges(self, filename='POINTCHG.INP'):
         """ mok all
         write external charges as monopoles for CRYSTAL.
 
@@ -383,12 +381,13 @@ class PointChargePotential:
         if self.mmcharges is None:
             print("CRYSTAL: Warning: not writing external charges ")
             return
-        with open(os.path.join(self.directory, filename), 'w') as charge_file:
-            charge_file.write(str(len(self.mmcharges)) + ' \n')
-            for [pos, charge] in zip(self.mmpositions, self.mmcharges):
-                [x, y, z] = pos
-                charge_file.write('%12.6f %12.6f %12.6f %12.6f \n'
-                                  % (x, y, z, charge))
+        charge_file = open(os.path.join(self.directory, filename), 'w')
+        charge_file.write(str(len(self.mmcharges))+' \n')
+        for [pos, charge] in zip(self.mmpositions, self.mmcharges):
+            [x, y, z] = pos
+            charge_file.write('%12.6f %12.6f %12.6f %12.6f \n'
+                              % (x, y, z, charge))
+        charge_file.close()
 
     def get_forces(self, calc, get_forces=True):
         """ returns forces on point charges if the flag get_forces=True """
@@ -399,10 +398,11 @@ class PointChargePotential:
 
     def read_forces_on_pointcharges(self):
         """Read Forces from CRYSTAL output file (OUTPUT)."""
-        with open(os.path.join(self.directory, 'OUTPUT'), 'r') as infile:
-            lines = infile.readlines()
+        infile = open(os.path.join(self.directory, 'OUTPUT'), 'r')
+        lines = infile.readlines()
+        infile.close()
 
-        print('PCPOT crys_pcc: ' + str(self.crys_pcc))
+        print('PCPOT crys_pcc: '+str(self.crys_pcc))
         # read in force and energy Coulomb corrections
         if self.crys_pcc:
             self.read_pc_corrections()
@@ -423,7 +423,7 @@ class PointChargePotential:
             external_forces.append(
                 [float(i) for i in line.split()[2:]])
 
-        f = np.array(external_forces) - f_coul
+        f = np.array(external_forces)  - f_coul
         f *= (Hartree / Bohr)
 
         return f
@@ -434,9 +434,9 @@ class PointChargePotential:
             to be subtracted again.
             This will be standard in future CRYSTAL versions .'''
 
-        with open(os.path.join(self.directory,
-                               'FORCES_CHG.DAT'), 'r') as infile:
-            lines = infile.readlines()
+        infile = open(os.path.join(self.directory, 'FORCES_CHG.DAT'), 'r')
+        lines = infile.readlines()
+        infile.close()
 
         e = [float(x.split()[-1])
              for x in lines if 'SELF-INTERACTION ENERGY(AU)' in x][0]

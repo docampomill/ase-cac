@@ -33,7 +33,6 @@ class Factorial:
 
 class FranckCondonOverlap:
     """Evaluate squared overlaps depending on the Huang-Rhys parameter."""
-
     def __init__(self):
         self.factorial = Factorial()
 
@@ -89,14 +88,13 @@ class FranckCondonRecursive:
 
     Notes
     -----
-    The overlaps are signed according to the sign of the displacements.
+    The ovelaps are signed according to the sign of the displacements.
 
     Reference
     ---------
     Julien Guthmuller
     The Journal of Chemical Physics 144, 064106 (2016); doi: 10.1063/1.4941449
     """
-
     def __init__(self):
         self.factorial = Factorial()
 
@@ -106,7 +104,7 @@ class FranckCondonRecursive:
         else:
             assert(m > 0)
             return - delta / np.sqrt(2 * m) * self.ov0m(m - 1, delta)
-
+            
     def ov1m(self, m, delta):
         sum = delta * self.ov0m(m, delta) / np.sqrt(2.)
         if m == 0:
@@ -114,7 +112,7 @@ class FranckCondonRecursive:
         else:
             assert(m > 0)
             return sum + np.sqrt(m) * self.ov0m(m - 1, delta)
-
+            
     def ov2m(self, m, delta):
         sum = delta * self.ov1m(m, delta) / 2
         if m == 0:
@@ -122,7 +120,7 @@ class FranckCondonRecursive:
         else:
             assert(m > 0)
             return sum + np.sqrt(m / 2.) * self.ov1m(m - 1, delta)
-
+            
     def ov3m(self, m, delta):
         sum = delta * self.ov2m(m, delta) / np.sqrt(6.)
         if m == 0:
@@ -130,14 +128,14 @@ class FranckCondonRecursive:
         else:
             assert(m > 0)
             return sum + np.sqrt(m / 3.) * self.ov2m(m - 1, delta)
-
+            
     def ov0mm1(self, m, delta):
         if m == 0:
             return delta / np.sqrt(2) * self.ov0m(m, delta)**2
         else:
             return delta / np.sqrt(2) * (
                 self.ov0m(m, delta)**2 - self.ov0m(m - 1, delta)**2)
-
+            
     def direct0mm1(self, m, delta):
         """direct and fast <0|m><m|1>"""
         S = delta**2 / 2.
@@ -192,18 +190,17 @@ class FranckCondonRecursive:
             sum += m * (m - 1)
         with np.errstate(divide='ignore', invalid='ignore'):
             return np.where(S == 0, 0,
-                            (np.exp(-S) * S**(m - 1) / delta
-                             * (S - m) * sum * self.factorial.inv(m)))
+                (np.exp(-S) * S**(m - 1) / delta * (S - m) * sum *
+                 self.factorial.inv(m)))
 
     def direct0mm3(self, m, delta):
         S = delta**2 / 2.
         with np.errstate(divide='ignore', invalid='ignore'):
-            return np.where(
-                S == 0, 0,
+            return np.where(S == 0, 0,
                 (np.exp(-S) * S**(m - 1) / delta * np.sqrt(12.) *
-                 (S**3 / 6. - m * S**2 / 2
-                  + m * (m - 1) * S / 2. - m * (m - 1) * (m - 2) / 6)
-                 * self.factorial.inv(m)))
+                 (S**3 / 6. - m * S**2 / 2 +
+                  m * (m - 1) * S / 2. - m * (m - 1) * (m - 2) / 6) *
+                 self.factorial.inv(m)))
 
 
 class FranckCondon:
@@ -259,37 +256,20 @@ class FranckCondon:
 
         return S_V, frequencies
 
-    def get_Franck_Condon_factors(self, temperature, forces, order=1):
+    def get_Franck_Condon_factors(self, order, temp, forces):
         """Return FC factors and corresponding frequencies up to given order.
 
-        Parameters
-        ----------
-        temperature: float
-          Temperature in K. Vibronic levels are occupied by a
-          Boltzman distribution.
-        forces: array
-          Forces on atoms in the exited electronic state
-        order: int
-          number of quanta taken into account, default
+        order= number of quanta taken into account
+        T= temperature in K. Vibronic levels are occupied by a
+        Boltzman distribution.
+        forces= forces on atoms in the exited electronic state"""
 
-        Returns
-        --------
-        FC: 3 entry list
-          FC[0] = FC factors for 0-0 and +-1 vibrational quantum
-          FC[1] = FC factors for +-2 vibrational quanta
-          FC[2] = FC factors for combinations
-        frequencies: 3 entry list
-          frequencies[0] correspond to FC[0]
-          frequencies[1] correspond to FC[1]
-          frequencies[2] correspond to FC[2]
-        """
         S, f = self.get_Huang_Rhys_factors(forces)
-        assert order > 0
         n = order + 1
-        T = temperature
+        T = temp
         freq = np.array(f)
 
-        # frequencies and their multiples
+        # frequencies
         freq_n = [[] * i for i in range(n - 1)]
         freq_neg = [[] * i for i in range(n - 1)]
 
@@ -304,7 +284,7 @@ class FranckCondon:
 
         indices2 = []
         for i, y in enumerate(freq):
-            ind = [j for j, x in enumerate(freq_nn) if y == 0 or x % y == 0]
+            ind = [j for j, x in enumerate(freq_nn) if x % y == 0]
             indices2.append(ind)
         indices2 = [x for x in chain(*indices2)]
         freq_nn = np.delete(freq_nn, indices2)
@@ -335,8 +315,8 @@ class FranckCondon:
 
         # occupation probability
         w_n = [[] * k for k in range(n)]
-        for lval in range(n):
-            w_n[lval] = f_n[lval] / Z
+        for l in range(n):
+            w_n[l] = f_n[l] / Z
 
         # overlap wavefunctions
         O_n = [[] * m for m in range(n)]
@@ -400,4 +380,10 @@ class FranckCondon:
 
         FC[2] = FC_nn
 
+        """Returned are two 3-dimensional lists. First inner list contains
+frequencies and FC-factors of vibrations exited with |1| quanta and
+the 0-0 transition.
+        Second list contains frequencies and FC-factors from higher
+quanta exitations. Third list are combinations of two normal modes
+(including combinations of higher quanta exitations). """
         return FC, frequencies

@@ -6,6 +6,7 @@ Before usage, input files (infile, topologyfile, incoordfile)
 
 """
 
+import os
 import subprocess
 import numpy as np
 
@@ -29,10 +30,8 @@ class Amber(FileIOCalculator):
     """
 
     implemented_properties = ['energy', 'forces']
-    discard_results_on_any_change = True
 
-    def __init__(self, restart=None,
-                 ignore_bad_restart_file=FileIOCalculator._deprecated,
+    def __init__(self, restart=None, ignore_bad_restart_file=False,
                  label='amber', atoms=None, command=None,
                  amber_exe='sander -O ',
                  infile='mm.in', outfile='mm.out',
@@ -53,7 +52,7 @@ class Amber(FileIOCalculator):
             Prefix to use for filenames (label.in, label.txt, ...).
         amber_exe: str
             Name of the amber executable, one can add options like -O
-            and other parameters here
+            and other paramaters here
         infile: str
             Input filename for amber, contains instuctions about the run
         outfile: str
@@ -98,6 +97,11 @@ class Amber(FileIOCalculator):
 
         FileIOCalculator.__init__(self, restart, ignore_bad_restart_file,
                                   label, atoms, **kwargs)
+
+    def set(self, **kwargs):
+        changed_parameters = FileIOCalculator.set(self, **kwargs)
+        if changed_parameters:
+            self.reset()
 
     def write_input(self, atoms=None, properties=None, system_changes=None):
         """Write updated coordinates to a file."""
@@ -185,7 +189,7 @@ class Amber(FileIOCalculator):
         velocities (if available),
         and unit cell (if available)
 
-        This may be useful if you have run amber many steps and
+        This may be usefull if you have run amber many steps and
         want to read new positions and velocities
         """
 
@@ -198,28 +202,21 @@ class Amber(FileIOCalculator):
 
         fin = netcdf.netcdf_file(filename, 'r')
         all_coordinates = fin.variables['coordinates'][:]
-        get_last_frame = False
-        if hasattr(all_coordinates, 'ndim'):
-            if all_coordinates.ndim == 3:
-                get_last_frame = True
-        elif hasattr(all_coordinates, 'shape'):
-            if len(all_coordinates.shape) == 3:
-                get_last_frame = True
-        if get_last_frame:
+        if all_coordinates.ndim == 3:
             all_coordinates = all_coordinates[-1]
         atoms.set_positions(all_coordinates)
         if 'velocities' in fin.variables:
             all_velocities = fin.variables['velocities'][:] / (1000 * units.fs)
-            if get_last_frame:
+            if all_velocities.ndim == 3:
                 all_velocities = all_velocities[-1]
             atoms.set_velocities(all_velocities)
         if 'cell_lengths' in fin.variables:
             all_abc = fin.variables['cell_lengths']
-            if get_last_frame:
+            if all_abc.ndim == 2:
                 all_abc = all_abc[-1]
             a, b, c = all_abc
             all_angles = fin.variables['cell_angles']
-            if get_last_frame:
+            if all_angles.ndim == 2:
                 all_angles = all_angles[-1]
             alpha, beta, gamma = all_angles
 
@@ -239,20 +236,17 @@ class Amber(FileIOCalculator):
 
     def read_energy(self, filename='mden'):
         """ read total energy from amber file """
-        with open(filename, 'r') as fd:
-            lines = fd.readlines()
+        lines = open(filename, 'r').readlines()
         self.results['energy'] = \
             float(lines[16].split()[2]) * units.kcal / units.mol
 
     def read_forces(self, filename='mdfrc'):
         """ read forces from amber file """
-        fd = netcdf.netcdf_file(filename, 'r')
-        try:
-            forces = fd.variables['forces']
-            self.results['forces'] = forces[-1, :, :] \
-                / units.Ang * units.kcal / units.mol
-        finally:
-            fd.close()
+        f = netcdf.netcdf_file(filename, 'r')
+        forces = f.variables['forces']
+        self.results['forces'] = forces[-1, :, :] \
+            / units.Ang * units.kcal / units.mol
+        f.close()
 
     def set_charges(self, selection, charges, parmed_filename=None):
         """ Modify amber topology charges to contain the updated
@@ -260,21 +254,29 @@ class Amber(FileIOCalculator):
             Using amber's parmed program to change charges.
         """
         qm_list = list(selection)
-        with open(parmed_filename, 'w') as fout:
-            fout.write('# update the following QM charges \n')
-            for i, charge in zip(qm_list, charges):
-                fout.write('change charge @' + str(i + 1) + ' ' +
-                           str(charge) + ' \n')
-            fout.write('# Output the topology file \n')
-            fout.write('outparm ' + self.topologyfile + ' \n')
+        fout = open(parmed_filename, 'w')
+        fout.write('# update the following QM charges \n')
+        for i, charge in zip(qm_list, charges):
+            fout.write('change charge @' + str(i + 1) + ' ' +
+                       str(charge) + ' \n')
+        fout.write('# Output the topology file \n')
+        fout.write('outparm ' + self.topologyfile + ' \n')
+        fout.close()
         parmed_command = ('parmed -O -i ' + parmed_filename +
                           ' -p ' + self.topologyfile +
                           ' > ' + self.topologyfile + '.log 2>&1')
-        subprocess.check_call(parmed_command, shell=True, cwd=self.directory)
+        olddir = os.getcwd()
+        try:
+            os.chdir(self.directory)
+            errorcode = subprocess.call(parmed_command, shell=True)
+        finally:
+            os.chdir(olddir)
+        if errorcode:
+            raise RuntimeError('%s returned an error: %d' %
+                               (self.label, errorcode))
 
     def get_virtual_charges(self, atoms):
-        with open(self.topologyfile, 'r') as fd:
-            topology = fd.readlines()
+        topology = open(self.topologyfile, 'r').readlines()
         for n, line in enumerate(topology):
             if '%FLAG CHARGE' in line:
                 chargestart = n + 2

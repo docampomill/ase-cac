@@ -17,7 +17,7 @@ def _read_construct_regex(lines):
     """
     Utility for constructing  regular expressions used by reader.
     """
-    lines = [line.strip() for line in lines]
+    lines = [l.strip() for l in lines]
     lines_re = '|'.join(lines)
     lines_re = lines_re.replace(' ', r'\s+')
     lines_re = lines_re.replace('(', r'\(')
@@ -281,11 +281,11 @@ def _write_output(filename, header_lines, data, fmt, order=None):
         If not None, gives a list of atom types for the order
         to write out each.
     """
-    fd = filename
+    f = filename
 
     # Write header section
     for line in header_lines:
-        fd.write("%s \n" % line)
+        f.write("%s \n" % line)
 
     # If specifying the order, fix the atom id and write to file
     natoms = data.shape[0]
@@ -296,11 +296,11 @@ def _write_output(filename, header_lines, data, fmt, order=None):
                 if atype == data[i][1]:
                     new_id += 1
                     data[i][0] = new_id
-                    fd.write(fmt % tuple(data[i]))
+                    f.write(fmt % tuple(data[i]))
     # ...just write rows to file
     else:
         for i in range(natoms):
-            fd.write(fmt % tuple(data[i]))
+            f.write(fmt % tuple(data[i]))
 
 
 @reader
@@ -326,8 +326,8 @@ def read_rmc6f(filename, atom_type_map=None):
         The Atoms object read in from the rmc6f file.
     """
 
-    fd = filename
-    lines = fd.readlines()
+    f = filename
+    lines = f.readlines()
 
     # Process the rmc6f file to extract positions and cell
     pos, cell = _read_process_rmc6f_lines_to_pos_and_cell(lines)
@@ -436,7 +436,7 @@ def write_rmc6f(filename, atoms, order=None, atom_type_map=None):
 
     density_str = "Number density (Ang^-3):              {}"
     density_line = density_str.format(len(atoms) / atoms.get_volume())
-    cell_angles = [str(x) for x in atoms.cell.cellpar()]
+    cell_angles = [str(x) for x in atoms.get_cell_lengths_and_angles()]
     cell_line = "Cell (Ang/deg): " + ' '.join(cell_angles)
     header_lines.extend([density_line, cell_line])
 
@@ -444,7 +444,7 @@ def write_rmc6f(filename, atoms, order=None, atom_type_map=None):
     # NOTE: RMCProfile uses a different convention for the fractionalization
     # matrix
 
-    cell_parameters = atoms.cell.cellpar()
+    cell_parameters = atoms.get_cell_lengths_and_angles()
     cell = Cell.fromcellpar(cell_parameters).T
     x_line = ' '.join(['{:12.6f}'.format(i) for i in cell[0]])
     y_line = ' '.join(['{:12.6f}'.format(i) for i in cell[1]])

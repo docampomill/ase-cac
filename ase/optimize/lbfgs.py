@@ -1,6 +1,8 @@
+# -*- coding: utf-8 -*-
 import numpy as np
 
 from ase.optimize.optimize import Optimizer
+from ase.utils import basestring
 from ase.utils.linesearch import LineSearch
 
 
@@ -12,7 +14,6 @@ class LBFGS(Optimizer):
     Hessian is represented only as a diagonal matrix to save memory
 
     """
-
     def __init__(self, atoms, restart=None, logfile='-', trajectory=None,
                  maxstep=None, memory=100, damping=1.0, alpha=70.0,
                  use_line_search=False, master=None,
@@ -37,7 +38,7 @@ class LBFGS(Optimizer):
         maxstep: float
             How far is a single atom allowed to move. This is useful for DFT
             calculations where wavefunctions can be reused if steps are small.
-            Default is 0.2 Angstrom.
+            Default is 0.04 Angstrom.
 
         memory: int
             Number of steps to be stored. Default value is 100. Three numpy
@@ -67,14 +68,13 @@ class LBFGS(Optimizer):
                            force_consistent=force_consistent)
 
         if maxstep is not None:
+            if maxstep > 1.0:
+                raise ValueError('You are using a much too large value for ' +
+                                 'the maximum step size: %.1f Angstrom' %
+                                 maxstep)
             self.maxstep = maxstep
         else:
-            self.maxstep = self.defaults['maxstep']
-
-        if self.maxstep > 1.0:
-            raise ValueError('You are using a much too large value for ' +
-                             'the maximum step size: %.1f Angstrom' %
-                             maxstep)
+            self.maxstep = 0.04
 
         self.memory = memory
         # Initial approximation of inverse Hessian 1./70. is to emulate the
@@ -91,7 +91,7 @@ class LBFGS(Optimizer):
         self.iteration = 0
         self.s = []
         self.y = []
-        # Store also rho, to avoid calculating the dot product again and
+        # Store also rho, to avoid calculationg the dot product again and
         # again.
         self.rho = []
 
@@ -195,7 +195,7 @@ class LBFGS(Optimizer):
 
     def replay_trajectory(self, traj):
         """Initialize history from old trajectory."""
-        if isinstance(traj, str):
+        if isinstance(traj, basestring):
             from ase.io.trajectory import Trajectory
             traj = Trajectory(traj, 'r')
         r0 = None

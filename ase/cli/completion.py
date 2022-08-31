@@ -1,16 +1,9 @@
-"""TAB-completion sub-command and update helper funtion.
-
-Run this when ever options are changed::
-
-    python3 -m ase.cli.completion
-"""
-
+import os
 import sys
-from pathlib import Path
-from typing import List, Dict, Tuple
 
 # Path of the complete.py script:
-path = Path(__file__).with_name('complete.py')
+my_dir, _ = os.path.split(os.path.realpath(__file__))
+filename = os.path.join(my_dir, 'complete.py')
 
 
 class CLICommand:
@@ -18,7 +11,8 @@ class CLICommand:
 
     Will show the command that needs to be added to your '~/.bashrc file.
     """
-    cmd = f'complete -o default -C "{sys.executable} {path}" ase'
+    cmd = ('complete -o default -C "{py} {filename}" ase'
+           .format(py=sys.executable, filename=filename))
 
     @staticmethod
     def add_arguments(parser):
@@ -30,20 +24,19 @@ class CLICommand:
         print(cmd)
 
 
-def update(path: Path,
-           subcommands: List[Tuple[str, str]],
-           test: bool = False) -> None:
-    """Update commands dict in complete.py.
+def update(filename, commands):
+    """Update commands dict.
 
-    Use test=True to test that no changes are needed.
+    Run this when ever options are changed::
 
-    Refactor with care!  This function is also used by GPAW.
+        python3 -m ase.cli.complete
+
     """
 
     import textwrap
-    from importlib import import_module
+    from ase.utils import import_module
 
-    dct: Dict[str, List[str]] = {}
+    dct = {}  # Dict[str, List[str]]
 
     class Subparser:
         def __init__(self, command):
@@ -57,9 +50,9 @@ def update(path: Path,
         def add_mutually_exclusive_group(self, required=False):
             return self
 
-    for command, module_name in subcommands:
+    for command, module_name in commands:
         module = import_module(module_name)
-        module.CLICommand.add_arguments(Subparser(command))  # type: ignore
+        module.CLICommand.add_arguments(Subparser(command))
 
     txt = 'commands = {'
     for command, opts in sorted(dct.items()):
@@ -72,27 +65,17 @@ def update(path: Path,
         else:
             txt += '],'
     txt = txt[:-1] + '}\n'
-
-    with path.open() as fd:
+    with open(filename) as fd:
         lines = fd.readlines()
-
-    a = lines.index('# Beginning of computer generated data:\n')
-    b = lines.index('# End of computer generated data\n')
-
-    if test:
-        if ''.join(lines[a + 1:b]) != txt:
-            raise ValueError(
-                'Please update ase/cli/complete.py using '
-                '"python3 -m ase.cli.completion".')
-    else:
-        lines[a + 1:b] = [txt]
-        new = path.with_name('complete.py.new')
-        with new.open('w') as fd:
-            print(''.join(lines), end='', file=fd)
-        new.rename(path)
-        path.chmod(0o775)
+        a = lines.index('# Beginning of computer generated data:\n')
+        b = lines.index('# End of computer generated data\n')
+    lines[a + 1:b] = [txt]
+    with open(filename + '.new', 'w') as fd:
+        print(''.join(lines), end='', file=fd)
+    os.rename(filename + '.new', filename)
+    os.chmod(filename, 0o775)
 
 
 if __name__ == '__main__':
     from ase.cli.main import commands
-    update(path, commands)
+    update(filename, commands)

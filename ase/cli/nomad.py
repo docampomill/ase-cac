@@ -1,6 +1,6 @@
-# Note:
-# Try to avoid module level import statements here to reduce
-# import time during CLI execution
+import os
+import os.path as op
+import subprocess
 
 
 class CLICommand:
@@ -31,10 +31,6 @@ class CLICommand:
 
     @staticmethod
     def run(args):
-        import os
-        import os.path as op
-        import subprocess
-
         dotase = op.expanduser('~/.ase')
         tokenfile = op.join(dotase, 'nomad-token')
 
@@ -58,6 +54,7 @@ class CLICommand:
                        'Original error: {}'
                        .format(tokenfile, err))
                 raise CLIError(msg)
+
 
         cmd = ('tar cf - {} | '
                'curl -XPUT -# -HX-Token:{} '

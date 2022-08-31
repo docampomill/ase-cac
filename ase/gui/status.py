@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from ase.gui.i18n import _
 from math import sqrt, pi, acos
 
@@ -35,6 +36,7 @@ class Status:  # Status is used as a mixin in GUI
         ordered_indices = [i for i in self.images.selected_ordered
                            if i < len(atoms)]
         n = len(indices)
+        self.nselected = n
 
         if n == 0:
             self.window.update_status_line('')
@@ -63,10 +65,7 @@ class Status:  # Status is used as a mixin in GUI
                 if key not in haveit:
                     val = atoms.get_array(key)[indices[0]]
                     if val is not None:
-                        if isinstance(val, int):
-                            text += ' {0}={1:g}'.format(key, val)
-                        else:
-                            text += ' {0}={1}'.format(key, val)
+                        text += ' {0}={1:g}'.format(key, val)
         elif n == 2:
             D = R[0] - R[1]
             d = sqrt(np.dot(D, D))

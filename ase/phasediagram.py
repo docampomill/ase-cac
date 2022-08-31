@@ -2,7 +2,6 @@ import fractions
 import functools
 import re
 from collections import OrderedDict
-from typing import List, Tuple, Dict
 
 import numpy as np
 from scipy.spatial import ConvexHull
@@ -10,7 +9,7 @@ from scipy.spatial import ConvexHull
 import ase.units as units
 from ase.formula import Formula
 
-_solvated: List[Tuple[str, Dict[str, int], float, bool, float]] = []
+_solvated = []
 
 
 def parse_formula(formula):
@@ -140,9 +139,9 @@ class Pourbaix:
             kwargs = parse_formula(formula)[0]
 
         if 'O' not in kwargs:
-            kwargs['O'] = 0
+            kwargs['O'] = 1
         if 'H' not in kwargs:
-            kwargs['H'] = 0
+            kwargs['H'] = 1
 
         self.kT = units.kB * T
         self.references = []
@@ -150,7 +149,15 @@ class Pourbaix:
             if name == 'O':
                 continue
             count, charge, aq = parse_formula(name)
-            if all(symbol in kwargs for symbol in count):
+
+            for symbol in count:
+                if aq:
+                    if not (symbol in 'HO' or symbol in kwargs):
+                        break
+                else:
+                    if symbol not in kwargs:
+                        break
+            else:
                 self.references.append((count, charge, aq, energy, name))
 
         self.references.append(({}, -1, False, 0.0, 'e-'))  # an electron
@@ -174,39 +181,7 @@ class Pourbaix:
         concentration: float
             Concentration of solvated references.
 
-        Returns optimal coefficients and energy:
-
-        >>> from ase.phasediagram import Pourbaix, solvated
-        >>> refs = solvated('CoO') + [
-        ...     ('Co', 0.0),
-        ...     ('CoO', -2.509),
-        ...     ('Co3O4', -9.402)]
-        >>> pb = Pourbaix(refs, Co=3, O=4)
-        >>> coefs, energy = pb.decompose(U=1.5, pH=0,
-        ...                              concentration=1e-6,
-        ...                              verbose=True)
-        0    HCoO2-(aq)    -3.974
-        1    CoO2--(aq)    -3.098
-        2    H2O(aq)       -2.458
-        3    CoOH+(aq)     -2.787
-        4    CoO(aq)       -2.265
-        5    CoOH++(aq)    -1.355
-        6    Co++(aq)      -0.921
-        7    H+(aq)         0.000
-        8    Co+++(aq)      1.030
-        9    Co             0.000
-        10   CoO           -2.509
-        11   Co3O4         -9.402
-        12   e-            -1.500
-        reference    coefficient      energy
-        ------------------------------------
-        H2O(aq)                4      -2.458
-        Co++(aq)               3      -0.921
-        H+(aq)                -8       0.000
-        e-                    -2      -1.500
-        ------------------------------------
-        Total energy:                 -9.596
-        ------------------------------------
+        Returns optimal coefficients and energy.
         """
 
         alpha = np.log(10) * self.kT
@@ -239,7 +214,7 @@ class Pourbaix:
                 elif name == 'H+(aq)':
                     energy = -pH * alpha
             else:
-                bounds.append((0, np.inf))
+                bounds.append((0, 1))
                 if aq:
                     energy -= entropy
             if verbose:
@@ -253,7 +228,9 @@ class Pourbaix:
         result = linprog(c=energies,
                          A_eq=np.transpose(eq2),
                          b_eq=eq1,
-                         bounds=bounds)
+                         bounds=bounds,
+                         options={'lstsq': True,
+                                  'presolve': True})
 
         if verbose:
             print_results(zip(names, result.x, energies))
@@ -473,7 +450,7 @@ class PhaseDiagram:
 
         return energy, indices, np.array(coefs)
 
-    def plot(self, ax=None, dims=None, show=False, **plotkwargs):
+    def plot(self, ax=None, dims=None, show=False):
         """Make 2-d or 3-d plot of datapoints and convex hull.
 
         Default is 2-d for 2- and 3-component diagrams and 3-d for a
@@ -496,7 +473,7 @@ class PhaseDiagram:
                 from mpl_toolkits.mplot3d import Axes3D
                 Axes3D  # silence pyflakes
             fig = plt.figure()
-            ax = fig.add_subplot(projection=projection)
+            ax = fig.gca(projection=projection)
         else:
             if dims == 3 and not hasattr(ax, 'set_zlim'):
                 raise ValueError('Cannot make 3d plot unless axes projection '
@@ -504,7 +481,7 @@ class PhaseDiagram:
 
         if dims == 2:
             if N == 2:
-                self.plot2d2(ax, **plotkwargs)
+                self.plot2d2(ax)
             elif N == 3:
                 self.plot2d3(ax)
             else:
@@ -522,8 +499,7 @@ class PhaseDiagram:
             plt.show()
         return ax
 
-    def plot2d2(self, ax=None,
-                only_label_simplices=False, only_plot_simplices=False):
+    def plot2d2(self, ax=None):
         x, e = self.points[:, 1:].T
         names = [re.sub(r'(\d+)', r'$_{\1}$', ref[2])
                  for ref in self.references]
@@ -536,13 +512,8 @@ class PhaseDiagram:
             for i, j in simplices:
                 ax.plot(x[[i, j]], e[[i, j]], '-b')
             ax.plot(x[hull], e[hull], 'sg')
-            if not only_plot_simplices:
-                ax.plot(x[~hull], e[~hull], 'or')
+            ax.plot(x[~hull], e[~hull], 'or')
 
-            if only_plot_simplices or only_label_simplices:
-                x = x[self.hull]
-                e = e[self.hull]
-                names = [name for name, h in zip(names, self.hull) if h]
             for a, b, name in zip(x, e, names):
                 ax.text(a, b, name, ha='center', va='top')
 

@@ -84,6 +84,7 @@ def get_bonds(atoms, covalent_radii):
 class View:
     def __init__(self, rotations):
         self.colormode = 'jmol'  # The default colors
+        self.nselected = 0
         self.labels = None
         self.axes = rotate(rotations)
         self.configured = False
@@ -243,7 +244,7 @@ class View:
         self.draw()
 
     def repeat_window(self, key=None):
-        return Repeat(self)
+        Repeat(self)
 
     def rotate_window(self):
         return Rotate(self)
@@ -392,6 +393,9 @@ class View:
         X = np.dot(self.X, axes) - offset
         n = len(self.atoms)
 
+        # extension for partial occupancies
+        tags = self.atoms.get_tags()
+
         # The indices enumerate drawable objects in z order:
         self.indices = X[:, 2].argsort()
         r = self.get_covalent_radii() * self.scale
@@ -441,8 +445,7 @@ class View:
                 ra = d[a]
                 if visible[a]:
                     try:
-                        kinds = self.atoms.arrays['spacegroup_kinds']
-                        site_occ = self.atoms.info['occupancy'][str(kinds[a])]
+                        site_occ = self.atoms.info['occupancy'][tags[a]]
                         # first an empty circle if a site is not fully occupied
                         if (np.sum([v for v in site_occ.values()])) < 1.0:
                             fill = '#ffffff'
@@ -471,7 +474,7 @@ class View:
                         # legacy behavior
                         # Draw the atoms
                         if (self.moving and a < len(self.move_atoms_mask)
-                                and self.move_atoms_mask[a]):
+                            and self.move_atoms_mask[a]):
                             circle(movecolor, False,
                                    A[a, 0] - 4, A[a, 1] - 4,
                                    A[a, 0] + ra + 4, A[a, 1] + ra + 4)
@@ -603,7 +606,7 @@ class View:
                 selected[:] = False
             selected[indices] = True
             if (len(indices) == 1 and
-                    indices[0] not in self.images.selected_ordered):
+                indices[0] not in self.images.selected_ordered):
                 selected_ordered += [indices[0]]
             elif len(indices) > 1:
                 selected_ordered = []
@@ -663,7 +666,7 @@ class View:
         self.draw(status=False)
 
     def render_window(self):
-        return Render(self)
+        Render(self)
 
     def resize(self, event):
         w, h = self.window.size

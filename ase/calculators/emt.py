@@ -50,7 +50,7 @@ class EMT(Calculator):
     older EMT implementations, although the results are not
     bitwise identical.
     """
-    implemented_properties = ['energy', 'free_energy', 'energies', 'forces',
+    implemented_properties = ['energy', 'energies', 'forces',
                               'stress', 'magmom', 'magmoms']
 
     nolabel = True
@@ -198,7 +198,7 @@ class EMT(Calculator):
         self.results['forces'] = self.forces
 
         if 'stress' in properties:
-            if self.atoms.cell.rank == 3:
+            if self.atoms.number_of_lattice_vectors == 3:
                 self.stress += self.stress.T.copy()
                 self.stress *= -0.5 / self.atoms.get_volume()
                 self.results['stress'] = self.stress.flat[[0, 4, 8, 5, 2, 1]]
@@ -237,18 +237,3 @@ class EMT(Calculator):
         self.forces[a1] -= f
         self.forces[a2] += f
         self.stress += np.outer(f, d)
-
-
-def main():
-    import sys
-    from ase.io import read, write
-    inputfile = sys.argv[1]
-    outputfile = sys.argv[2]
-    atoms = read(inputfile)
-    atoms.calc = EMT()
-    atoms.get_stress()
-    write(outputfile, atoms)
-
-
-if __name__ == '__main__':
-    main()

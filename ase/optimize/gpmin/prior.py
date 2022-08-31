@@ -30,7 +30,7 @@ class ZeroPrior(Prior):
         Prior.__init__(self)
 
     def potential(self, x):
-        return np.zeros(x.shape[0] + 1)
+        return np.zeros(x.shape[0]+1)
 
 
 class ConstantPrior(Prior):
@@ -52,7 +52,7 @@ class ConstantPrior(Prior):
 
     def potential(self, x):
         d = x.shape[0]
-        output = np.zeros(d + 1)
+        output = np.zeros(d+1)
         output[0] = self.constant
         return output
 
@@ -73,7 +73,7 @@ class CalculatorPrior(Prior):
     def __init__(self, atoms, calculator):
         Prior.__init__(self)
         self.atoms = atoms.copy()
-        self.atoms.calc = calculator
+        self.atoms.set_calculator(calculator)
 
     def potential(self, x):
         self.atoms.set_positions(x.reshape(-1, 3))

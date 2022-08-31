@@ -21,8 +21,6 @@ def remove_nan_and_inf(obj):
         return [remove_nan_and_inf(x) for x in obj]
     if isinstance(obj, dict):
         return {key: remove_nan_and_inf(value) for key, value in obj.items()}
-    if isinstance(obj, np.ndarray) and not np.isfinite(obj).all():
-        return remove_nan_and_inf(obj.tolist())
     return obj
 
 
@@ -83,8 +81,7 @@ def insert_ase_and_ndarray_objects(obj):
     if isinstance(obj, dict):
         objtype = obj.pop('__ase_objtype__', None)
         if objtype is not None:
-            return create_ase_object(objtype,
-                                     insert_ase_and_ndarray_objects(obj))
+            return create_ase_object(objtype, obj)
         data = obj.get('__ndarray__')
         if data is not None:
             return create_ndarray(*data)

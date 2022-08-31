@@ -1,4 +1,4 @@
-# type: ignore
+
 import re
 import sys
 from collections import namedtuple
@@ -12,13 +12,14 @@ from tkinter.messagebox import showerror, showwarning, showinfo
 from tkinter.filedialog import LoadFileDialog, SaveFileDialog
 
 from ase.gui.i18n import _
+from ase.utils import basestring
 
 
 __all__ = [
     'error', 'ask_question', 'MainWindow', 'LoadFileDialog', 'SaveFileDialog',
     'ASEGUIWindow', 'Button', 'CheckButton', 'ComboBox', 'Entry', 'Label',
     'Window', 'MenuItem', 'RadioButton', 'RadioButtons', 'Rows', 'Scale',
-    'showinfo', 'showwarning', 'SpinBox', 'Text', 'set_windowtype']
+    'showinfo', 'showwarning', 'SpinBox', 'Text']
 
 
 if sys.platform == 'darwin':
@@ -40,7 +41,6 @@ def about(name, version, webpage):
             _('Version') + ': ' + version,
             _('Web-page') + ': ' + webpage]
     win = Window(_('About'))
-    set_windowtype(win.win, 'dialog')
     win.add(Text('\n'.join(text)))
 
 
@@ -50,21 +50,11 @@ def helpbutton(text):
 
 def helpwindow(text):
     win = Window(_('Help'))
-    set_windowtype(win.win, 'dialog')
     win.add(Text(text))
 
 
-def set_windowtype(win, wmtype):
-    # only on X11
-    # WM_TYPE, for possible settings see
-    # https://specifications.freedesktop.org/wm-spec/wm-spec-latest.html#idm45623487848608
-    # you want dialog, normal or utility most likely
-    if win._windowingsystem == "x11":
-        win.wm_attributes('-type', wmtype)
-
-
-class BaseWindow:
-    def __init__(self, title, close=None, wmtype='normal'):
+class BaseWindow(object):
+    def __init__(self, title, close=None):
         self.title = title
         if close:
             self.win.protocol('WM_DELETE_WINDOW', close)
@@ -73,7 +63,6 @@ class BaseWindow:
 
         self.things = []
         self.exists = True
-        set_windowtype(self.win, wmtype)
 
     def close(self):
         self.win.destroy()
@@ -85,7 +74,7 @@ class BaseWindow:
     title = property(None, title)
 
     def add(self, stuff, anchor='w'):  # 'center'):
-        if isinstance(stuff, str):
+        if isinstance(stuff, basestring):
             stuff = Label(stuff)
         elif isinstance(stuff, list):
             stuff = Row(stuff)
@@ -94,12 +83,12 @@ class BaseWindow:
 
 
 class Window(BaseWindow):
-    def __init__(self, title, close=None, wmtype='normal'):
+    def __init__(self, title, close=None):
         self.win = tk.Toplevel()
-        BaseWindow.__init__(self, title, close, wmtype)
+        BaseWindow.__init__(self, title, close)
 
 
-class Widget:
+class Widget(object):
     def pack(self, parent, side='top', anchor='center'):
         widget = self.create(parent)
         widget.pack(side=side, anchor=anchor)
@@ -130,7 +119,7 @@ class Row(Widget):
     def create(self, parent):
         self.widget = tk.Frame(parent)
         for thing in self.things:
-            if isinstance(thing, str):
+            if isinstance(thing, basestring):
                 thing = Label(thing)
             thing.pack(self.widget, 'left')
         return self.widget
@@ -143,13 +132,10 @@ class Label(Widget):
     def __init__(self, text='', color=None):
         self.creator = partial(tk.Label, text=text, fg=color)
 
-    @property
-    def text(self):
-        return self.widget['text']
-
-    @text.setter
     def text(self, new):
         self.widget.config(text=new)
+
+    text = property(None, text)
 
 
 class Text(Widget):
@@ -243,13 +229,6 @@ class SpinBox(Widget):
         self.widget.insert(0, x)
 
 
-# Entry and ComboBox use same mechanism (since ttk ComboBox
-# is a subclass of tk Entry).
-def _set_entry_value(widget, value):
-    widget.delete(0, 'end')
-    widget.insert(0, value)
-
-
 class Entry(Widget):
     def __init__(self, value='', width=20, callback=None):
         self.creator = partial(tk.Entry,
@@ -273,7 +252,8 @@ class Entry(Widget):
 
     @value.setter
     def value(self, x):
-        _set_entry_value(self.entry, x)
+        self.entry.delete(0, 'end')
+        self.entry.insert(0, x)
 
 
 class Scale(Widget):
@@ -360,7 +340,6 @@ if ttk is not None:
                 def callback(event):
                     self.callback(self.value)
                 widget.bind('<<ComboboxSelected>>', callback)
-
             return widget
 
         @property
@@ -369,7 +348,7 @@ if ttk is not None:
 
         @value.setter
         def value(self, val):
-            _set_entry_value(self.widget, val)
+            self.widget.current(self.values.index(val))
 else:
     # Use Entry object when there is no ttk:
     def ComboBox(labels, values, callback):
@@ -390,7 +369,7 @@ class Rows(Widget):
         return widget
 
     def add(self, row):
-        if isinstance(row, str):
+        if isinstance(row, basestring):
             row = Label(row)
         elif isinstance(row, list):
             row = Row(row)
@@ -537,6 +516,20 @@ class MainWindow(BaseWindow):
             except UnicodeDecodeError:
                 pass
 
+    def test(self, test, close_after_test=False):
+        def callback():
+            try:
+                next(test)
+            except StopIteration:
+                if close_after_test:
+                    self.close()
+            else:
+                self.win.after_idle(callback)
+
+        test.__name__ = str('?')
+        self.win.after_idle(test)  # callback)
+        self.run()
+
     def __getitem__(self, name):
         return self.menu[name].get()
 
@@ -557,12 +550,6 @@ class ASEFileChooser(LoadFileDialog):
     def __init__(self, win, formatcallback=lambda event: None):
         from ase.io.formats import all_formats, get_ioformat
         LoadFileDialog.__init__(self, win, _('Open ...'))
-        # fix tkinter not automatically setting dialog type
-        # remove from Python3.8+
-        # see https://github.com/python/cpython/pull/25187
-        # and https://bugs.python.org/issue43655
-        # and https://github.com/python/cpython/pull/25592
-        set_windowtype(self.top, 'dialog')
         labels = [_('Automatic')]
         values = ['']
 
@@ -572,7 +559,7 @@ class ASEFileChooser(LoadFileDialog):
         for format, (description, code) in sorted(all_formats.items(),
                                                   key=key):
             io = get_ioformat(format)
-            if io.can_read and description != '?':
+            if io.read and description != '?':
                 labels.append(_(description))
                 values.append(format)
 
@@ -665,11 +652,12 @@ class ASEGUIWindow(MainWindow):
             outline = 'black'
             width = 1
         self.canvas.create_arc(*tuple(int(x) for x in bbox),
-                               start=start,
-                               extent=extent,
-                               fill=color,
-                               outline=outline,
-                               width=width)
+                                start=start,
+                                extent=extent,
+                                fill=color,
+                                outline=outline,
+                                width=width)
+
 
     def line(self, bbox, width=1):
         self.canvas.create_line(*tuple(int(x) for x in bbox), width=width)

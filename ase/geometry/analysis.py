@@ -2,30 +2,15 @@
 """Tools for analyzing instances of :class:`~ase.Atoms`
 """
 
-from typing import List, Optional
-
-import numpy as np
-
 from ase.neighborlist import build_neighbor_list, get_distance_matrix, get_distance_indices
-from ase.geometry.rdf import get_rdf, get_containing_cell_length
+from ase.ga.utilities import get_rdf
 from ase import Atoms
 
 
 __all__ = ['Analysis']
 
 
-def get_max_containing_cell_length(images: List[Atoms]):
-    i2diff = np.zeros(3)
-    for image in images:
-        np.maximum(get_containing_cell_length(image), i2diff, out=i2diff)
-    return i2diff
-
-
-def get_max_volume_estimate(images: List[Atoms]) -> float:
-    return np.product(get_max_containing_cell_length(images))
-
-
-class Analysis:
+class Analysis(object):
     """Analysis class
 
     Parameters for initialization:
@@ -559,11 +544,8 @@ class Analysis:
 
         return r
 
-    def get_max_volume_estimate(self):
-        return get_max_volume_estimate(self.images)
 
-    def get_rdf(self, rmax, nbins, imageIdx=None, elements=None, return_dists=False,
-                volume: Optional[float] = None):
+    def get_rdf(self, rmax, nbins, imageIdx=None, elements=None, return_dists=False):
         """Get RDF.
 
         Wrapper for :meth:`ase.ga.utilities.get_rdf` with more selection possibilities.
@@ -573,7 +555,7 @@ class Analysis:
         rmax: float
             Maximum distance of RDF.
         nbins: int
-            Number of bins to divide RDF.
+            Number of bins to devide RDF.
         imageIdx: int/slice/None
             Images to analyze, see :func:`_get_slice` for details.
         elements: str/int/list/tuple
@@ -592,21 +574,21 @@ class Analysis:
 
         sl = self._get_slice(imageIdx)
 
-        ls_rdf = []
+        r = []
         el = None
 
         for image in self.images[sl]:
             if elements is None:
-                tmp_image = image
+                tmpImage = image
             #integers
             elif isinstance(elements, int):
-                tmp_image = Atoms(cell=image.get_cell(), pbc=image.get_pbc())
-                tmp_image.append(image[elements])
+                tmpImage = Atoms(cell=image.get_cell(), pbc=image.get_pbc())
+                tmpImage.append(image[elements])
             #strings
             elif isinstance(elements, str):
-                tmp_image = Atoms(cell=image.get_cell(), pbc=image.get_pbc())
+                tmpImage = Atoms(cell=image.get_cell(), pbc=image.get_pbc())
                 for idx in self._get_symbol_idxs(image, elements):
-                    tmp_image.append(image[idx])
+                    tmpImage.append(image[idx])
             #lists
             elif isinstance(elements, list) or isinstance(elements, tuple):
                 #list of ints
@@ -614,25 +596,22 @@ class Analysis:
                     if len(elements) == 2:
                         #use builtin get_rdf mask
                         el = elements
-                        tmp_image = image
+                        tmpImage = image
                     else:
                         #create dummy image
-                        tmp_image = Atoms(cell=image.get_cell(), pbc=image.get_pbc())
+                        tmpImage = Atoms(cell=image.get_cell(), pbc=image.get_pbc())
                         for idx in elements:
-                            tmp_image.append(image[idx])
+                            tmpImage.append(image[idx])
                 #list of strings
                 elif all(isinstance(x, str) for x in elements):
-                    tmp_image = Atoms(cell=image.get_cell(), pbc=image.get_pbc())
+                    tmpImage = Atoms(cell=image.get_cell(), pbc=image.get_pbc())
                     for element in elements:
                         for idx in self._get_symbol_idxs(image, element):
-                            tmp_image.append(image[idx])
+                            tmpImage.append(image[idx])
                 else:
                     raise ValueError("Unsupported type of elements given in ase.geometry.analysis.Analysis.get_rdf!")
             else:
                 raise ValueError("Unsupported type of elements given in ase.geometry.analysis.Analysis.get_rdf!")
 
-            rdf = get_rdf(tmp_image, rmax, nbins, elements=el, no_dists=(not return_dists),
-                          volume=volume)
-            ls_rdf.append(rdf)
-
-        return ls_rdf
+            r.append(get_rdf(tmpImage, rmax, nbins, elements=el, no_dists=(not return_dists)))
+        return r

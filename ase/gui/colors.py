@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """colors.py - select how to color the atoms in the GUI."""
 from ase.gui.i18n import _
 
@@ -9,13 +10,12 @@ from ase.gui.utils import get_magmoms
 
 class ColorWindow:
     """A window for selecting how to color the atoms."""
-
     def __init__(self, gui):
         self.reset(gui)
 
     def reset(self, gui):
         """create a new color window"""
-        self.win = ui.Window(_('Colors'), wmtype='utility')
+        self.win = ui.Window(_('Colors'))
         self.gui = gui
         self.win.add(ui.Label(_('Choose how the atoms are colored:')))
         values = ['jmol', 'tag', 'force', 'velocity',

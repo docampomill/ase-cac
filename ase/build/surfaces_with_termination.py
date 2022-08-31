@@ -5,8 +5,7 @@ from ase.symbols import string2symbols
 
 
 def surfaces_with_termination(lattice, indices, layers, vacuum=None, tol=1e-10,
-                              termination=None, return_all=False,
-                              verbose=False):
+                              termination=None, return_all=False, verbose=False):
     """Create surface from a given lattice and Miller indices with a given
         termination
 
@@ -29,8 +28,8 @@ def surfaces_with_termination(lattice, indices, layers, vacuum=None, tol=1e-10,
             terminations, this function returns all terminations with the same
             atomic composition.
             e.g. 'O' will return oxygen terminated surfaces.
-            e.g.'TiO' returns surfaces terminated with layers containing both
-            O and Ti
+            e.g.'TiO' will return surfaces terminated with layers containing both O
+            and Ti
         Returns:
         return_surfs: List
             a list of surfaces that match the specifications given
@@ -43,20 +42,18 @@ def surfaces_with_termination(lattice, indices, layers, vacuum=None, tol=1e-10,
     for item in lats:
         too_similar = False
         surf = surface(item, indices, layers, vacuum=vacuum, tol=tol)
-        surf.wrap(pbc=[True] * 3)  # standardize slabs
-
+        surf.wrap(pbc = [True] * 3) # standardize slabs
+        
         positions = surf.get_scaled_positions().flatten()
         for i, value in enumerate(positions):
             if value >= 1 - tol:  # move things closer to zero within tol
                 positions[i] -= 1
         surf.set_scaled_positions(np.reshape(positions, (len(surf), 3)))
-        # rep = find_z_layers(surf)
-        z_layers, hs = get_layers(surf, (0, 0, 1))  # just z layers matter
+        #rep = find_z_layers(surf)
+        z_layers, hs = get_layers(surf, (0, 0, 1)) # just z layers matter
         # get the indicies of the atoms in the highest layer
-        top_layer = [
-            i for i, val in enumerate(
-                z_layers == max(z_layers)) if val]
-
+        top_layer = [i for i, val in enumerate(z_layers == max(z_layers)) if val]
+         
         if termination is not None:
             comp = [surf.get_chemical_symbols()[a] for a in top_layer]
             term = string2symbols(termination)
@@ -81,7 +78,7 @@ def surfaces_with_termination(lattice, indices, layers, vacuum=None, tol=1e-10,
         return_surfs.append(surf)
     return return_surfs
 
-
+            
 def translate_lattice(lattice, indices, tol=10**-3):
     """translates a bulk unit cell along a normal vector given by the a set of
     miller indices to the next symetric position. This is used to control the
@@ -101,7 +98,7 @@ def translate_lattice(lattice, indices, tol=10**-3):
     lattice_list = []
     cell = lattice.get_cell()
     pt = [0, 0, 0]
-    h, k, l = indices  # noqa (E741 ambiguous name 'l')
+    h, k, l = indices
     millers = list(indices)
     for index, item in enumerate(millers):
         if item == 0:
@@ -135,8 +132,8 @@ def translate_lattice(lattice, indices, tol=10**-3):
         The above method gives you the boundries of between terminations that
         will allow you to build a complete set of terminations. However, it
         does not return all the boundries. Thus you must check both above and
-        below the boundary, and not stray too far from the boundary. If you move
-        too far away, you risk hitting another boundary you did not find.
+        below the boundry, and not stray too far from the boundry. If you move
+        too far away, you risk hitting another boundry you did not find.
         """
         lattice1 = lattice.copy()
         displacement = (h * cell[0] + k * cell[1] + l * cell[2]) \

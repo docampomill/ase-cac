@@ -1,6 +1,4 @@
-from typing import List, Sequence, Set, Dict, Union, Iterator
 import warnings
-import collections.abc
 
 import numpy as np
 
@@ -8,15 +6,12 @@ from ase.data import atomic_numbers, chemical_symbols
 from ase.formula import Formula
 
 
-Integers = Union[Sequence[int], np.ndarray]
-
-
-def string2symbols(s: str) -> List[str]:
+def string2symbols(s):
     """Convert string to list of chemical symbols."""
     return list(Formula(s))
 
 
-def symbols2numbers(symbols) -> List[int]:
+def symbols2numbers(symbols):
     if isinstance(symbols, str):
         symbols = string2symbols(symbols)
     numbers = []
@@ -28,7 +23,7 @@ def symbols2numbers(symbols) -> List[int]:
     return numbers
 
 
-class Symbols(collections.abc.Sequence):
+class Symbols:
     """A sequence of chemical symbols.
 
     ``atoms.symbols`` is a :class:`ase.symbols.Symbols` object.  This
@@ -44,8 +39,7 @@ class Symbols(collections.abc.Sequence):
     >>> atoms.symbols[:3]
     Symbols('C2O')
     >>> atoms.symbols == 'H'
-    array([False, False, False,  True,  True,  True,  True,  True,  True], \
-dtype=bool)
+    array([False, False, False,  True,  True,  True,  True,  True,  True], dtype=bool)
     >>> atoms.symbols[-3:] = 'Pu'
     >>> atoms.symbols
     Symbols('C2OH3Pu3')
@@ -53,54 +47,47 @@ dtype=bool)
     >>> atoms.symbols
     Symbols('C2OMo2UPu3')
     >>> atoms.symbols.formula
-    Formula('C2OMo2UPu3')
+    Formula('CCOMoMoUPuPuPu')
 
     The :class:`ase.formula.Formula` object is useful for extended
     formatting options and analysis.
 
     """
-
-    def __init__(self, numbers) -> None:
-        self.numbers = np.asarray(numbers, int)
+    def __init__(self, numbers):
+        self.numbers = numbers
 
     @classmethod
-    def fromsymbols(cls, symbols) -> 'Symbols':
+    def fromsymbols(cls, symbols):
         numbers = symbols2numbers(symbols)
         return cls(np.array(numbers))
 
     @property
-    def formula(self) -> Formula:
+    def formula(self):
         """Formula object."""
-        string = Formula.from_list(self).format('reduce')
-        return Formula(string)
+        return Formula.from_list([chemical_symbols[Z] for Z in self.numbers])
 
-    def __getitem__(self, key) -> Union['Symbols', str]:
+    def __getitem__(self, key):
         num = self.numbers[key]
         if np.isscalar(num):
             return chemical_symbols[num]
         return Symbols(num)
 
-    def __iter__(self) -> Iterator[str]:
-        for num in self.numbers:
-            yield chemical_symbols[num]
-
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key, value):
         numbers = symbols2numbers(value)
         if len(numbers) == 1:
-            self.numbers[key] = numbers[0]
-        else:
-            self.numbers[key] = numbers
+            numbers = numbers[0]
+        self.numbers[key] = numbers
 
-    def __len__(self) -> int:
+    def __len__(self):
         return len(self.numbers)
 
-    def __str__(self) -> str:
+    def __str__(self):
         return self.get_chemical_formula('reduce')
 
-    def __repr__(self) -> str:
+    def __repr__(self):
         return 'Symbols(\'{}\')'.format(self)
 
-    def __eq__(self, obj) -> bool:
+    def __eq__(self, obj):
         if not hasattr(obj, '__len__'):
             return False
 
@@ -112,15 +99,10 @@ dtype=bool)
             return False
         return self.numbers == symbols.numbers
 
-    def get_chemical_formula(
-            self,
-            mode: str = 'hill',
-            empirical: bool = False,
-    ) -> str:
+    def get_chemical_formula(self, mode='hill', empirical=False):
         """Get chemical formula.
 
         See documentation of ase.atoms.Atoms.get_chemical_formula()."""
-        # XXX Delegate the work to the Formula object!
         if mode in ('reduce', 'all') and empirical:
             warnings.warn("Empirical chemical formula not available "
                           "for mode '{}'".format(mode))
@@ -157,49 +139,3 @@ dtype=bool)
                     "Use mode = 'all', 'reduce', 'hill' or 'metal'.")
 
         return formula
-
-    def search(self, symbols) -> Integers:
-        """Return the indices of elements with given symbol or symbols."""
-        numbers = set(symbols2numbers(symbols))
-        indices = [i for i, number in enumerate(self.numbers)
-                   if number in numbers]
-        return np.array(indices, int)
-
-    def species(self) -> Set[str]:
-        """Return unique symbols as a set."""
-        return set(self)
-
-    def indices(self) -> Dict[str, Integers]:
-        """Return dictionary mapping each unique symbol to indices.
-
-        >>> from ase.build import molecule
-        >>> atoms = molecule('CH3CH2OH')
-        >>> atoms.symbols.indices()
-        {'C': array([0, 1]), 'O': array([2]), 'H': array([3, 4, 5, 6, 7, 8])}
-
-        """
-        dct: Dict[str, List[int]] = {}
-        for i, symbol in enumerate(self):
-            dct.setdefault(symbol, []).append(i)
-        return {key: np.array(value, int) for key, value in dct.items()}
-
-    def species_indices(self) -> Sequence[int]:
-        """Return the indices of each atom within their individual species.
-
-        >>> from ase import Atoms
-        >>> atoms = Atoms('CH3CH2OH')
-        >>> atoms.symbols.species_indices()
-        [0, 0, 1, 2, 1, 3, 4, 0, 5]
-
-         ^  ^  ^  ^  ^  ^  ^  ^  ^
-         C  H  H  H  C  H  H  O  H
-
-        """
-
-        counts: Dict[str, int] = {}
-        result = []
-        for i, n in enumerate(self.numbers):
-            counts[n] = counts.get(n, -1) + 1
-            result.append(counts[n])
-
-        return result
